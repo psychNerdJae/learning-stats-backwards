@@ -1,0 +1,5 @@
+Data sources (in approx order of introduction/use in tutorials):
+
+covid-19 self-isolation study
+https://github.com/jpheffne/covid_intervention
+
