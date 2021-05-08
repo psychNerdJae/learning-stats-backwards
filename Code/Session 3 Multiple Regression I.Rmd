@@ -1,0 +1,224 @@
+---
+title: "Session 3: Multiple regression I: continuous variables"
+author: "Jae-Young Son"
+output:
+  html_document:
+    code_folding: show
+    toc: TRUE
+    toc_float: TRUE
+---
+
+This document was most recently knit on `r Sys.Date()`.
+
+# Setup
+
+As usual, let's call some libraries before we get started.
+
+```{r message=FALSE}
+library(tidyverse)
+library(broom)
+library(knitr)
+library(here)
+library(palmerpenguins)
+```
+
+# Change depends on many quantities
+
+Let's return to the problem of predicting how much rainfall we're going to get. Let's say we have a grandparent who swears they get achey joints every time it rains. We could build a predictive model of rainfall by asking our grandparent how much their joints hurt, on a scale of 1-10. Sure enough, the more their joints hurt, the more rainfall we get a few hours later. Of course, this isn't a perfect system. Sometimes, our grandparent is just feeling achey for no reason.
+
+The purpose of building predictive models is to find predictors that can account for ***variability*** in an outcome variable. So, we can intuitively think of our grandparent's pain rating as a predictor that accounts for some small amount of variability in rainfall.
+
+Of course, there are other predictors that we could be interested in. For example, we might have measurements from a thermometer, barometer, and wind sock, and we think these measurements might help to improve our ability to predict rainfall. This is the motivation behind ***multiple regression***, which is just a fancy way of saying that we want to test a model that has many predictors in it. We could write out this model using math, using the same notation we covered last time:
+
+$ Rainfall = \beta_0 + \beta_1 PainRating + \beta_2 Temperature + \beta_3 Pressure + \beta_4 WindSpeed $
+
+The idea is simple, and it's actually really easy to write the code that performs the analysis. But as we'll see, interpreting the output from this kind of model can be tricky, and requires careful thinking. In particular, we must always remember that our goal is to test hypotheses, and we must not lose sight of this goal when building models.
+
+We'll return to the example of predicting rainfall in a little while; let's dig into some data!
+
+# Extracting information about models
+
+To re-acquaint ourselves with the Palmer Penguins dataset, let's take a `glimpse` at what variables it contains:
+
+```{r}
+penguins %>%
+  glimpse()
+```
+
+Last time, we always estimated the model using `lm`, then immediately piped that to `tidy`. This time, let's do something a little different, and save the model to a variable. Here's an example where I predict body mass using bill depth. The variable name `lm_bd` tells us that we've saved a linear model, and that we're using bill depth as a predictor.
+
+```{r}
+lm_bd <- penguins %>%
+  lm(body_mass_g ~ bill_depth_mm,
+     data = .)
+```
+
+What's the benefit of doing this? Right now, we're running really simple models, so it only takes a few seconds to estimate the beta weights. Later, as our models become increasingly complex, it takes many minutes to estimate parameters (there have been a few times in my research where I've had to wait upwards of 30 minutes for a single model). So, it's nice to be able to do it once, then save it to memory.
+
+The other benefit is that there are a lot of functions we can apply to our model! I really like `tidy` because it turns the results into a nice, tidy tibble:
+
+```{r}
+tidy(lm_bd)
+```
+
+But, we could have alternatively used one of R's base functions to look at the model output:
+
+```{r}
+summary(lm_bd)
+```
+
+Here's another function I really like, which allows us to take a `glance` at different model fit metrics. For now, we're only going to worry about `r.squared`.
+
+```{r}
+glance(lm_bd)
+```
+
+In our rainfall example, we know that our grandparent's pain rating is somewhat predictive of rain. But we also know that it's a very "noisy" measure. Although our grandparent is okay at predicting rain on average, there are plenty of times where they aren't very accurate at all. Of all the variance in rainfall, perhaps our grandparent's pain rating only accounts for 10% of it. This is an intuitive example of a predictor that is statistically significant, but doesn't account for much of the variance in the outcome variable. We can quantify this using $R^2$: of all the variance in the outcome variable, what percent of it is accounted for by our predictors? We can see that bill depth accounts for 22% of the variance in body mass. This isn't terrible, but there's a lot of room for improvement.
+
+# Review
+
+Now, try predicting body mass using flipper length. Save the estimated model in a variable called `lm_fl`, then take a look at the results. If you need a hint, take a look at my code.
+
+```{r class.source = 'fold-hide'}
+lm_fl <- penguins %>%
+  lm(body_mass_g ~ flipper_length_mm,
+     data = .)
+
+lm_fl %>% tidy()
+```
+
+Great, now let's do the same thing, but using bill length as a predictor. Save the model in `lm_bl`.
+
+```{r class.source = 'fold-hide'}
+lm_bl <- penguins %>%
+  lm(body_mass_g ~ bill_length_mm,
+     data = .)
+
+lm_bl %>% tidy()
+```
+
+# Shared variance
+
+Now that we've estimated those two simple regressions, let's take a look at how much flipper and bill length (on their own) account for the variance in body mass.
+
+```{r}
+lm_fl %>% glance()
+lm_bl %>% glance()
+```
+
+We can see that flipper length accounts for 76% of the variance, and bill length accounts for 35%. Not bad! How much of an improvement would we expect to see if we performed multiple regression with these predictors? Naively, we might say $76 + 35 = 111$, except... that can't be right, because perfect prediction is capped at 100%.
+
+Let's just try it and see what result we get.
+
+```{r class.source = 'fold-hide'}
+lm_fl_bl <- penguins %>%
+  lm(body_mass_g ~ flipper_length_mm + bill_length_mm,
+     data = .)
+
+lm_fl_bl %>% glance()
+```
+
+What the heck? On its own, flipper length explained 76% of the variance in body mass. Adding beak length doesn't seem to help all that much!
+
+This is the problem of shared variance, and we're going to return to our rainfall example to understand it.
+
+Why does our poor grandparent feel joint pain when it's about to rain? There's some good medical evidence that joint pain is (in part) caused by low atmospheric pressure. Coincidentally, low atmospheric pressure often precedes rainfall. So if we're able to measure atmospheric pressure using a barometer, does our grandparent's pain rating matter? Yes in the sense that we like our grandparent, but no in the sense that their pain rating doesn't provide useful predictive information above-and-beyond what the barometer can tell us. In other words, if we know what the barometer reading is, then our grandparent's pain rating doesn't tell us anything we didn't already know. So, even if we use our grandparent's pain rating in the same predictive model as barometric pressure, it doesn't account for very much additional variance in rainfall outcomes. This is because the barometer reading and our grandparent's pain rating *share variance* with each other.
+
+So let's return to our penguins. If we include both flipper and bill length in our model, what are some reasons why it might not have a very big impact on variance explained, compared to a simpler model that only includes flipper length?
+
+Let's take a look at the model results too:
+
+```{r}
+lm_fl_bl %>% tidy()
+```
+
+On its own, we saw that bill length significantly predicted body mass. But in a regression that also includes flipper length, we see that it's no longer significant. We might say something like this: "*Adjusting for* flipper length, there is a non-significant effect of bill length on body mass." You might also hear this as "*controlling for* flipper length" or something like "*holding flipper length constant*..."
+
+What does that mean? Let's say that you've got two penguins, Archie and Betty. Both of them have the exact same flipper length, but Archie's bill is 5mm longer. Can you predict how much heavier Archie is than Betty? This is a very easy thing to compute, because we're making a prediction using bill length, holding flipper length constant. Of course, in the real world, it's very doubtful that we'd be able to find a colony of penguins that all have the exact same flipper length. Despite this, we want to be able to say something about the relationship between bill length and body mass.
+
+Regression does this by finding ***semi-partial*** estimates of the relationship strength between each predictor and your outcome variable. This is a fancy way of saying that the beta estimates reflect each predictor's *unique* contribution to the overall variance explained in the outcome variable.
+
+Let's see if we can plot these data to get an intuitive sense for these results. Our regression results demonstrated a very strong relationship between flipper length and body mass. If there were an *additional* relationship between bill length and body mass (above-and-beyond an effect of flipper length), what would we expect to see? Keeping flipper length constant, we'd expect to see that longer bills are associated with greater body mass. In the plot below, that means for any single point on the x-axis, you'd expect to see bills getting longer as you move from bottom-to-top. Clear as mud? Try this: take your mouse cursor (or finger), and place it on the x-axis where flipper length is 200mm. As you move from the bottom of the plot to the top, we'd expect to see purple dots first, then pink, then orange. That's not what we observe, though, and this is why there isn't a significant effect of bill length on body mass, keeping flipper length constant (i.e., adjusting/controlling for flipper length). You can try doing the same thing with any flipper length; there's never any systematic pattern. So, we cannot reject the nihilist's null hypothesis.
+
+```{r}
+penguins %>%
+  ggplot(aes(x=flipper_length_mm, y=body_mass_g, color=bill_length_mm)) +
+  geom_point() +
+  scale_colour_viridis_b(option = "plasma")
+```
+
+# Prediction and hypothesis-testing
+
+In this tutorial, I've framed model-building as a problem of "prediction", whereas I framed model-building as a problem of "hypothesis testing" in the previous tutorial. There are times when these goals diverge (many data scientists care primarily about prediction, whereas many scientists care primarily about hypothesis testing... but this is a very broad generalization), but we are going to try our best to make sure that we consider model-building from both perspectives.
+
+Why might we have a hypothesis that bill length is relevant for body mass? Last time, I made up a reason: penguins with longer bills are more efficient at finding food than penguins that have shorter bills. Maybe! But we'd expect larger penguins to have longer bills to begin with. So, in our analysis, we want to find a measure that allows us to "control for" penguin size when predicting their body mass. Flipper length seems like a reasonable metric for this, so we include it in the model. To the extent that longer bills actually improve a penguin's ability to find food, we should be able to see a significant effect of bill length on body mass ***controlling for*** (or, equivalently, ***adjusting for***) flipper length. However, in the analysis, we don't see this prediction being confirmed, so we cannot reject the nihilist's null hypothesis (i.e., that bill length doesn't matter).
+
+That is an example of how a hypothesis can be tested in the context of multiple regression. It is also an example of how easily people can make up hypotheses to fit whatever pattern of results they observe after running the test. This is known as HARKing (Hypothesizing After Results are Known), and it is a logical fallacy. When you're doing research "for real", you want to make sure that you know what hypotheses you're testing *before* you do any statistical tests. We'll discuss why this is a problem in a future tutorial. For educational purposes, we can't magically generate new data out of nowhere, so we are going to continue performing statistical analyses sans hypothesis. Just remember that we're only doing it to teach you the techniques!
+
+# Interpreting model estimates
+
+Now, let's estimate a model that uses bill length and depth as predictors. Save it to `lm_bl_bd`, then compare the model fit against `lm_bl` and `lm_bd`. What do you notice about this multiple regression? Do you think bill length and bill depth share a lot of variance with each other?
+
+```{r class.source = 'fold-hide'}
+lm_bl_bd <- penguins %>%
+  lm(body_mass_g ~ bill_length_mm + bill_depth_mm,
+     data = .)
+
+lm_bl_bd %>% glance()
+lm_bl %>% glance()
+lm_bd %>% glance()
+```
+
+Now let's take a look at this model output:
+
+```{r}
+lm_bl_bd %>% tidy()
+```
+
+Remember our linear model equation from last time? Write out the equation for this model. Now that you have it written out, can you reason through what the regression intercept tells us?
+
+Think about it a little more before continuing... If you said that the intercept is the average penguin's body mass when it has a bill that is $0$mm long and $0$mm deep, then you're right. Is that a meaningful estimate? Why or why not?
+
+Now let's move on to the estimate for bill length. What does this number mean? Try explaining it out loud before reading further... This estimate says that for every $1$mm increase in bill length, a penguin's body mass increases by $75.28$g on average, *adjusting for bill depth*. This is the semi-partial estimate. Do you remember what that means? If not, scroll up to review. In this context, it means that no matter what a penguin's bill depth is, we know that a $1$mm increase in bill length is associated with a $75.28$g increase in body mass.
+
+Try your hand at explaining the estimate for bill depth.
+
+# Exercises
+
+Let's revisit the dataset from the previous tutorial. Since we're learning multiple regression using continuous variables, we'll only work with a subset of the variables. As a reminder, the researchers were studying people's willingness to self-isolate during covid-19. People were shown a threatening or prosocial message, then made ratings about their emotions and their willingness to self-isolate. They were also given a personality questionnaire that measured their extraversion and neuroticism.
+
+- willingness: tells you how willing a subject is to self-isolate after reading the message (0=not willing, 100=extremely willing)
+- valence: how positive or negative a subject's emotions were after reading the message (higher numbers = more positive)
+- arousal: how "activated" a subject's emotions were after reading the message (higher numbers = more activated)
+- extraversion: how much an individual is extraverted or introverted (higher numbers = more extraverted)
+- neuroticism: how much an individual is prone to feeling negative emotions (higher numbers = more neurotic)
+
+```{r eval=FALSE}
+covid_intervention <- here("Data", "covid_intervention.csv") %>%
+  read_csv() %>%
+  mutate(keep = if_else(sub %% 2 == 0, "threat", "prosocial")) %>%
+  filter(keep == intervention) %>%
+  select(sub, willingness, valence, arousal, extraversion = bfi_extraversion, neuroticism = bfi_neuroticism)
+```
+
+## Exercise 1
+
+An affective scientist is interested in understanding how a person's emotions affect their willingness to self-isolate. They hypothesize that the more negative and activated a person feels, the more willing they would be to self-isolate. Therefore, the model they want to test looks like this: $ Willingness = \beta_0 + \beta_1 Valence + \beta_2 Arousal $.
+
+What would the estimate of $\beta_0$ tell you? How about $\beta_1$ and $\beta_2$?
+
+Estimate this model and look at the results. Remember, you're performing a hypothesis test, so make sure to think about whether the hypotheses are supported. Interpret the results in plain language so that a non-scientist could understand. In your explanation, make sure to describe what the estimates and p-values mean.
+
+Now take a look at the model's $R^2$. What does this tell you about this model's ability to predict willingness to self-isolate?
+
+Okay, now let's think about shared variance. Estimate simple regressions that predict willingness using *either* valence *or* arousal. Compare these simple regressions against the multiple regression. Interpret the beta estimates, p-values, and $R^2$.
+
+## Exercise 2
+
+A personality scientist wants to know how extraversion and neuroticism affect people's willingness to self-isolate.
+
+List out plausible hypotheses. Write down the mathematical formula for the regression model to test these hypotheses. Estimate the model and interpret it. What do you conclude?
+
+The affective scientist has taken note of the personality variables, and thinks that it might be important to control for those variables when examining the effects of emotion on willingness to self-isolate. What would it mean to control for those personality variables? How might that change the estimates for the emotion variables, if there's a lot of shared variance? Now, estimate the model. What do you conclude about the shared variance between the emotion and personality variables?
+
+
