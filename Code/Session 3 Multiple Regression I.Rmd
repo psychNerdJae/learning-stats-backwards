@@ -108,7 +108,7 @@ lm_bl %>% glance()
 
 We can see that flipper length accounts for 76% of the variance, and bill length accounts for 35%. Not bad! How much of an improvement would we expect to see if we performed multiple regression with these predictors? Naively, we might say $76 + 35 = 111$, except... that can't be right, because perfect prediction is capped at 100%.
 
-Let's try it and see what result we get.
+Let's just try it and see what result we get.
 
 ```{r class.source = 'fold-hide'}
 lm_fl_bl <- penguins %>%
@@ -132,9 +132,13 @@ Let's take a look at the model results too:
 lm_fl_bl %>% tidy()
 ```
 
-On its own, we saw that bill length significantly predicted body mass. But in a regression that also includes flipper length, we see that it's no longer significant.
+On its own, we saw that bill length significantly predicted body mass. But in a regression that also includes flipper length, we see that it's no longer significant. We might say something like this: "*Adjusting for* flipper length, there is a non-significant effect of bill length on body mass." You might also hear this as "*controlling for* flipper length" or something like "*holding flipper length constant*..."
 
-Let's see if we can plot these data to get an intuitive sense for these results. As our regression results showed, there's a very strong relationship between flipper length and body mass. If there were an *additional* relationship between bill length and body mass (above-and-beyond an effect of flipper length), what would we expect to see? Keeping flipper length constant, we'd expect to see that longer bills are associated with greater body mass. Is there evidence of this? Try taking your mouse cursor (or finger), and tracing the vertical line where flipper length is 200mm. As we move from the bottom of the plot to the top, we'd expect to see purple dots first, then pink, then orange. This is not the pattern we observe, and so we cannot reject the nihilist's null hypothesis.
+What does that mean? Let's say that you've got two penguins, Archie and Betty. Both of them have the exact same flipper length, but Archie's bill is 5mm longer. Can you predict how much heavier Archie is than Betty? This is a very easy thing to compute, because we're making a prediction using bill length, holding flipper length constant. Of course, in the real world, it's very doubtful that we'd be able to find a colony of penguins that all have the exact same flipper length. Despite this, we want to be able to say something about the relationship between bill length and body mass.
+
+Regression does this by finding ***semi-partial*** estimates of the relationship strength between each predictor and your outcome variable. This is a fancy way of saying that the beta estimates reflect each predictor's *unique* contribution to the overall variance explained in the outcome variable.
+
+Let's see if we can plot these data to get an intuitive sense for these results. Our regression results demonstrated a very strong relationship between flipper length and body mass. If there were an *additional* relationship between bill length and body mass (above-and-beyond an effect of flipper length), what would we expect to see? Keeping flipper length constant, we'd expect to see that longer bills are associated with greater body mass. In the plot below, that means for any single point on the x-axis, you'd expect to see bills getting longer as you move from bottom-to-top. Clear as mud? Try this: take your mouse cursor (or finger), and place it on the x-axis where flipper length is 200mm. As you move from the bottom of the plot to the top, we'd expect to see purple dots first, then pink, then orange. That's not what we observe, though, and this is why there isn't a significant effect of bill length on body mass, keeping flipper length constant (i.e., adjusting/controlling for flipper length). You can try doing the same thing with any flipper length; there's never any systematic pattern. So, we cannot reject the nihilist's null hypothesis.
 
 ```{r}
 penguins %>%
@@ -175,8 +179,46 @@ Remember our linear model equation from last time? Write out the equation for th
 
 Think about it a little more before continuing... If you said that the intercept is the average penguin's body mass when it has a bill that is $0$mm long and $0$mm deep, then you're right. Is that a meaningful estimate? Why or why not?
 
-Now let's move on to the estimate for bill length. What does this number mean? Try explaining it out loud before reading further... This estimate says that for every $1$mm increase in bill length, a penguin's body mass increases by $75.28$g on average, *adjusting for bill depth*. You might also hear this expressed as *controlling for bill depth*, or something like *holding bill depth constant*. What does that mean? Let's say that you've got two penguins, Archie and Betty. Both of them have the exact same bill depth, but Archie's bill is 5mm longer. Can you predict how much heavier Archie is than Betty? This is a very easy thing to compute, because we're making a prediction from bill length, holding bill depth constant. Of course, in the real world, it's very doubtful that we'd be able to find a colony of penguins that all have the exact same bill depth. Despite this, we want to be able to say something about bill length. Regression does this by finding ***semi-partial*** estimates of the relationship strength between each predictor and your outcome variable. This is a fancy way of saying that the beta estimates reflect each predictor's *unique* contribution to the overall variance explained in the outcome variable. So, no matter what a penguin's bill depth is, we know that a $1$mm increase in bill length is associated with a $75.28$g increase in body mass.
+Now let's move on to the estimate for bill length. What does this number mean? Try explaining it out loud before reading further... This estimate says that for every $1$mm increase in bill length, a penguin's body mass increases by $75.28$g on average, *adjusting for bill depth*. This is the semi-partial estimate. Do you remember what that means? If not, scroll up to review. In this context, it means that no matter what a penguin's bill depth is, we know that a $1$mm increase in bill length is associated with a $75.28$g increase in body mass.
 
 Try your hand at explaining the estimate for bill depth.
+
+# Exercises
+
+Let's revisit the dataset from the previous tutorial. Since we're learning multiple regression using continuous variables, we'll only work with a subset of the variables. As a reminder, the researchers were studying people's willingness to self-isolate during covid-19. People were shown a threatening or prosocial message, then made ratings about their emotions and their willingness to self-isolate. They were also given a personality questionnaire that measured their extraversion and neuroticism.
+
+- willingness: tells you how willing a subject is to self-isolate after reading the message (0=not willing, 100=extremely willing)
+- valence: how positive or negative a subject's emotions were after reading the message (higher numbers = more positive)
+- arousal: how "activated" a subject's emotions were after reading the message (higher numbers = more activated)
+- extraversion: how much an individual is extraverted or introverted (higher numbers = more extraverted)
+- neuroticism: how much an individual is prone to feeling negative emotions (higher numbers = more neurotic)
+
+```{r eval=FALSE}
+covid_intervention <- here("Data", "covid_intervention.csv") %>%
+  read_csv() %>%
+  mutate(keep = if_else(sub %% 2 == 0, "threat", "prosocial")) %>%
+  filter(keep == intervention) %>%
+  select(sub, willingness, valence, arousal, extraversion = bfi_extraversion, neuroticism = bfi_neuroticism)
+```
+
+## Exercise 1
+
+An affective scientist is interested in understanding how a person's emotions affect their willingness to self-isolate. They hypothesize that the more negative and activated a person feels, the more willing they would be to self-isolate. Therefore, the model they want to test looks like this: $ Willingness = \beta_0 + \beta_1 Valence + \beta_2 Arousal $.
+
+What would the estimate of $\beta_0$ tell you? How about $\beta_1$ and $\beta_2$?
+
+Estimate this model and look at the results. Remember, you're performing a hypothesis test, so make sure to think about whether the hypotheses are supported. Interpret the results in plain language so that a non-scientist could understand. In your explanation, make sure to describe what the estimates and p-values mean.
+
+Now take a look at the model's $R^2$. What does this tell you about this model's ability to predict willingness to self-isolate?
+
+Okay, now let's think about shared variance. Estimate simple regressions that predict willingness using *either* valence *or* arousal. Compare these simple regressions against the multiple regression. Interpret the beta estimates, p-values, and $R^2$.
+
+## Exercise 2
+
+A personality scientist wants to know how extraversion and neuroticism affect people's willingness to self-isolate.
+
+List out plausible hypotheses. Write down the mathematical formula for the regression model to test these hypotheses. Estimate the model and interpret it. What do you conclude?
+
+The affective scientist has taken note of the personality variables, and thinks that it might be important to control for those variables when examining the effects of emotion on willingness to self-isolate. What would it mean to control for those personality variables? How might that change the estimates for the emotion variables, if there's a lot of shared variance? Now, estimate the model. What do you conclude about the shared variance between the emotion and personality variables?
 
 
