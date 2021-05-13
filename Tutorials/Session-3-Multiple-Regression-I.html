@@ -258,7 +258,7 @@ div.tocify {
 </div>
 
 
-<p>This document was most recently knit on 2021-05-07.</p>
+<p>This document was most recently knit on 2021-05-13.</p>
 <div id="setup" class="section level1">
 <h1>Setup</h1>
 <p>As usual, let’s call some libraries before we get started.</p>
@@ -273,7 +273,7 @@ library(palmerpenguins)</code></pre>
 <p>Let’s return to the problem of predicting how much rainfall we’re going to get. Let’s say we have a grandparent who swears they get achey joints every time it rains. We could build a predictive model of rainfall by asking our grandparent how much their joints hurt, on a scale of 1-10. Sure enough, the more their joints hurt, the more rainfall we get a few hours later. Of course, this isn’t a perfect system. Sometimes, our grandparent is just feeling achey for no reason.</p>
 <p>The purpose of building predictive models is to find predictors that can account for <strong><em>variability</em></strong> in an outcome variable. So, we can intuitively think of our grandparent’s pain rating as a predictor that accounts for some small amount of variability in rainfall.</p>
 <p>Of course, there are other predictors that we could be interested in. For example, we might have measurements from a thermometer, barometer, and wind sock, and we think these measurements might help to improve our ability to predict rainfall. This is the motivation behind <strong><em>multiple regression</em></strong>, which is just a fancy way of saying that we want to test a model that has many predictors in it. We could write out this model using math, using the same notation we covered last time:</p>
-<p>$ Rainfall = _0 + _1 PainRating + _2 Temperature + _3 Pressure + _4 WindSpeed $</p>
+<p><span class="math inline">\(Rainfall = \beta_0 + \beta_1 PainRating + \beta_2 Temperature + \beta_3 Pressure + \beta_4 WindSpeed\)</span></p>
 <p>The idea is simple, and it’s actually really easy to write the code that performs the analysis. But as we’ll see, interpreting the output from this kind of model can be tricky, and requires careful thinking. In particular, we must always remember that our goal is to test hypotheses, and we must not lose sight of this goal when building models.</p>
 <p>We’ll return to the example of predicting rainfall in a little while; let’s dig into some data!</p>
 </div>
@@ -470,7 +470,7 @@ lm_bl_bd %&gt;% glance()</code></pre>
   select(sub, willingness, valence, arousal, extraversion = bfi_extraversion, neuroticism = bfi_neuroticism)</code></pre>
 <div id="exercise-1" class="section level2">
 <h2>Exercise 1</h2>
-<p>An affective scientist is interested in understanding how a person’s emotions affect their willingness to self-isolate. They hypothesize that the more negative and activated a person feels, the more willing they would be to self-isolate. Therefore, the model they want to test looks like this: $ Willingness = _0 + _1 Valence + _2 Arousal $.</p>
+<p>An affective scientist is interested in understanding how a person’s emotions affect their willingness to self-isolate. They hypothesize that the more negative and activated a person feels, the more willing they would be to self-isolate. Therefore, the model they want to test looks like this: <span class="math inline">\(Willingness = \beta_0 + \beta_1 Valence + \beta_2 Arousal\)</span>.</p>
 <p>What would the estimate of <span class="math inline">\(\beta_0\)</span> tell you? How about <span class="math inline">\(\beta_1\)</span> and <span class="math inline">\(\beta_2\)</span>?</p>
 <p>Estimate this model and look at the results. Remember, you’re performing a hypothesis test, so make sure to think about whether the hypotheses are supported. Interpret the results in plain language so that a non-scientist could understand. In your explanation, make sure to describe what the estimates and p-values mean.</p>
 <p>Now take a look at the model’s <span class="math inline">\(R^2\)</span>. What does this tell you about this model’s ability to predict willingness to self-isolate?</p>
