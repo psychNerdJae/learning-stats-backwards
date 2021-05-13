@@ -22,11 +22,90 @@ library(here)
 library(palmerpenguins)
 ```
 
+# Review
+
+By now, we're comfortable with the idea that changes in an outcome variable can depend on many predictors. We've considered that in multiple regression, the beta coefficients reflect semi-partial estimates, which reflect each predictor's unique contribution to variabililty in the outcome variable. In the previous session, we played around with these ideas using continuous variables. Now, we are ready to tackle multiple regression using categorical predictors.
+
+It is commonly said that categorical variables make regression analyses more complicated. It is true that you need to have a better intuition for what the model is doing "under the hood", and it is also true (for whatever reason) that this is not typically taught very well in statistics classes. However, the intuitions are not so hard to learn. As you'll soon see, the hardest part of working with categorical variables will be deciphering obscure-looking predictor labels in the regression output.
+
+A few sessions ago, we performed "simple" regressions with a single categorical variable. Let's revisit that analysis. We wanted to test whether different penguin species have different average body mass. By default, the regression model estimated a ***difference contrast***, which used one category (Adelie penguins) as the reference category and estimated the *difference* in body mass between Adelie penguins and Chinstrap/Gentoo penguins.
+
+```{r}
+penguins %>%
+  lm(body_mass_g ~ species,
+     data = .) %>%
+  tidy()
+```
+
+Recall also that in our code, the regression formula is specified using "Wilkinson notation". How do we write that out into a mathematical equation? Based on Wilkinson notation, most people would guess:
+
+$ BodyMass = \beta_0 + \beta_1 Species $
+
+But that is not correct. Remember that we need to find ways to translate categories into numbers, as regression models deal in numbers. Specifically, we need to define $k-1$ predictors, where $k$ is the number of categories within a variable. The variable `species` contains three categories (Adelie, Chinstrap, and Gentoo), so we need two predictors. If you need a refresher on why this is the case, you can find details in Session 2.
+
+So the regression equation is actually written out like this:
+
+$ BodyMass = \beta_0 + \beta_1 IsChinstrap + \beta_2 IsGentoo $
+
+Test yourself: where did the Adelie penguins go? Why is the first predictor called "Is Chinstrap?", and what does the corresponding dummy variable look like?
+
+This makes intuitive sense if you look at the regression output. Every row of the output reflects the value of an estimated beta coefficient, so we need a beta coefficient for every term. Specifying a single predictor for `Species` doesn't make sense because that doesn't leave enough beta coefficients for the two difference contrasts (Adelie vs Chinstrap, and Adelie vs Gentoo).
+
+A surprisingly large number of people never realize this, and report mis-specified regression equations even in published work.
+
+What's the value of knowing this? It occasionally allows us to use clever little tricks in our analyses, which can help us extract more useful information from our models. For example, we can specify a model that has no intercept. In the absence of an intercept term, we need an extra dummy variable to tell us whether a given penguin "Is Adelie?". Try writing out that regression equation. Let's take a look at what this model output looks like:
+
+```{r}
+penguins %>%
+  lm(body_mass_g ~ 0 + species,
+     data = .) %>%
+  tidy()
+```
+
+We can see that the intercept term has been replaced by `speciesAdelie`, which has the same estimate, standard error, t-value, and p-value. But, since there's no more reference category, the estimates for `speciesChinstrap` and `speciesGentoo` reflect the average body mass for those species, not the average *difference* in body mass between those species and Adelie penguins. This can sometimes be useful, though in practice it's usually preferable to estimate an intercept term.
+
+So, what was the point of this demonstration? We can see that building just a little bit of intuition goes a long way in helping us understand the mechanics of how our models work. This gives us the power to interpret our models in a more sophisticated way, and to even *specify* our models to test the questions we really care about. Do you want to compare Chinstrap and Gentoo penguins against Adelie penguins? Use a difference contrast. Do you want to know the average weight of each species, without reference to any particular species? Get rid of the intercept term. We'll now build on these intuitions and introduce new ways of thinking about categorical variables.
+
 # Change depends on many categories
 
-People say categorical variables make regression analyses more complicated.
+Without knowing it, we've already performed multiple regression with categorical variables, in the sense that a single categorical variable must be decomposed into multiple dummy predictors. Now, we'll expand our toolbox so that we can interpret models with multiple categorical variables.
 
-That is not really true.
+It is natural to expect that different penguin species will have different average body masses. Another reasonable expectation is that there will be sex differences in body mass.
+
+Let's first plot out those data to get a sense for what our analysis will be doing:
+
+```{r}
+penguins %>%
+  group_by(species, sex) %>%
+  summarise(body_mass_g = mean(body_mass_g, na.rm = T), .groups = "drop") %>%
+  drop_na() %>%
+  ggplot(aes(x=species, y=body_mass_g, fill=sex)) +
+  geom_bar(stat = "identity", position = position_dodge())
+```
+
+We can examine both in the same model using the same notation we've been using:
+
+```{r}
+penguins %>%
+  lm(body_mass_g ~ species + sex,
+     data = .) %>%
+  tidy()
+```
+
+Let's practice reading out this table. We'll note that `sex` has two categories, `female` and `male`. Yet, there's seemingly only one estimate. Where did female penguins go? Just as we need a reference category for species, we need a reference category for sex. The intercept therefore reflects the estimated average body mass of *female Adelie* penguins. The semi-partial estimate for `sexmale` tells us how much heavier *male* penguins are, *adjusting for species*... so this means that on average, male penguins are $668$ grams heavier than female penguins.
+
+The estimate for `speciesGentoo` is now the difference contrast for female Gentoo penguins, compared to female Adelie penguins. So, we can see that female Gentoos are $1378$ grams heavier than female Adelies, a statistically significant difference. What if we wanted to compare *male* Gentoos against female Adelies? We would add the estimate of `speciesGentoo` to the estimate of `sexmale`. Male Gentoos are therefore $1378 + 668 = 2046$ grams heavier than female Adelies. How heavy is that, in absolute terms? Simply add the intercept estimate. Male Gentoos, on average, have a body mass of $3372 + 1378 + 668 = 5418$ grams.
+
+Okay, now you try: Compared to a male Adelie, what's the average body mass difference for a male Chinstrap? How much mass is that, in absolute terms?
+
+In the dataset, there are also observations about what island each penguin lived on: Biscoe, Dream, and Torgersen. Your biologist friend has a hypothesis that some islands have richer food sources for the penguins
+
+```{r}
+penguins %>%
+  lm(body_mass_g ~ species + island,
+     data = .) %>%
+  tidy()
+```
 
 We can use regression to test the questions we actually care about, by making smart use of contrasts.
 
