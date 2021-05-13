@@ -24,7 +24,11 @@ library(palmerpenguins)
 
 # Change depends on many categories
 
+People say categorical variables make regression analyses more complicated.
 
+That is not really true.
+
+We can use regression to test the questions we actually care about, by making smart use of contrasts.
 
 Let's return to the problem of predicting how much rainfall we're going to get. Let's say we have a grandparent who swears they get achey joints every time it rains. We could build a predictive model of rainfall by asking our grandparent how much their joints hurt, on a scale of 1-10. Sure enough, the more their joints hurt, the more rainfall we get a few hours later. Of course, this isn't a perfect system. Sometimes, our grandparent is just feeling achey for no reason.
 
