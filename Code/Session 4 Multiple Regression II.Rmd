@@ -12,7 +12,7 @@ This document was most recently knit on `r Sys.Date()`.
 
 # Setup
 
-As usual, let's call some libraries before we get started.
+As usual, let's call some libraries before we get started. If you don't have `janitor` installed, run `install.packages("janitor")` in your console.
 
 ```{r message=FALSE}
 library(tidyverse)
@@ -20,6 +20,8 @@ library(broom)
 library(knitr)
 library(here)
 library(palmerpenguins)
+library(lubridate)
+library(janitor)
 ```
 
 # Review
@@ -39,13 +41,13 @@ penguins %>%
 
 Recall also that in our code, the regression formula is specified using "Wilkinson notation". How do we write that out into a mathematical equation? Based on Wilkinson notation, most people would guess:
 
-$ BodyMass = \beta_0 + \beta_1 Species $
+$BodyMass = \beta_0 + \beta_1 Species$
 
 But that is not correct. Remember that we need to find ways to translate categories into numbers, as regression models deal in numbers. Specifically, we need to define $k-1$ predictors, where $k$ is the number of categories within a variable. The variable `species` contains three categories (Adelie, Chinstrap, and Gentoo), so we need two predictors. If you need a refresher on why this is the case, you can find details in Session 2.
 
 So the regression equation is actually written out like this:
 
-$ BodyMass = \beta_0 + \beta_1 IsChinstrap + \beta_2 IsGentoo $
+$BodyMass = \beta_0 + \beta_1 IsChinstrap + \beta_2 IsGentoo$
 
 Test yourself: where did the Adelie penguins go? Why is the first predictor called "Is Chinstrap?", and what does the corresponding dummy variable look like?
 
@@ -68,13 +70,13 @@ So, what was the point of this demonstration? We can see that building just a li
 
 # Change depends on many categories
 
-Without knowing it, we've already performed multiple regression with categorical variables, in the sense that a single categorical variable must be decomposed into multiple dummy predictors. Now, we'll expand our toolbox so that we can interpret models with multiple categorical variables.
+Without knowing it, we've already performed multiple regression with categorical variables, in the sense that a single categorical variable must be decomposed into multiple dummy variables, which are used as predictors. Now, we'll expand our toolbox so that we can interpret models with multiple categorical variables.
 
-It is natural to expect that different penguin species will have different average body masses. Another reasonable expectation is that there will be sex differences in body mass.
+It is reasonable to expect that different penguin species will have different average body masses. Another reasonable expectation is that males will have greater body mass than females.
 
-Let's first plot out those data to get a sense for what our analysis will be doing:
+Let's first plot out those data to get a sense for what our analysis will be doing. Try to recreate this plot on your own, and peek at my code if you get stuck.
 
-```{r}
+```{r class.source = 'fold-hide'}
 penguins %>%
   group_by(species, sex) %>%
   summarise(body_mass_g = mean(body_mass_g, na.rm = T), .groups = "drop") %>%
@@ -83,7 +85,7 @@ penguins %>%
   geom_bar(stat = "identity", position = position_dodge())
 ```
 
-We can examine both in the same model using the same notation we've been using:
+We can examine both of these variables in the same model using familiar notation:
 
 ```{r}
 penguins %>%
@@ -98,212 +100,236 @@ The estimate for `speciesGentoo` is now the difference contrast for female Gento
 
 Okay, now you try: Compared to a male Adelie, what's the average body mass difference for a male Chinstrap? How much mass is that, in absolute terms?
 
-In the dataset, there are also observations about what island each penguin lived on: Biscoe, Dream, and Torgersen. Your biologist friend has a hypothesis that some islands have richer food sources for the penguins
+## Practice
+
+In the dataset, there are also observations about what island each penguin lived on: Biscoe, Dream, and Torgersen. Your ecologist friend has a hypothesis that Biscoe Island has richer food sources than the other islands, which causes penguins from that island to have greater body mass. Test this hypothesis using only `island` predictors. What do you conclude? Make sure to interpret the estimates and p-values in plain language.
+
+Your biologist friend happens to overhear the conversation, and suggests that you also add predictors for penguin `species` to that model. What do you conclude? Make sure to interpret every term in context. For example, what does the intercept mean?
+
+Your ecologist and biologist friends are confused by the discrepancies between the two models. Visualizations can often help us make sense of data, so create a barplot illustrating mean body mass, as a function of species and island. What does this visualization tell you about the model results? Are there predictors that we should consider removing from the model, and if so, why?
+
+# Contrasts
+
+So far, we have only considered the difference contrast, which compares all levels of a categorical variable against a reference category. In many introductory statistics classes, this is the only contrast that is ever covered. Oftentimes, it is also suggested that a researcher must obligatorily pick a single reference category. For example, if a researcher is studying health outcomes by racial background, they are often taught that they must pick a single racial group to be the reference category, and to limit their analysis to comparing other racial groups against the reference category. For a variety of reasons, this usually means (in the U.S.) that whites are chosen to be the reference group, and all racial minorities are only examined in contrast to whites. We have already seen (in Session 2) that this view is mistaken. Changing the reference category does not change what information is provided to the model; it only re-parameterizes it. So, if we were interested in (e.g.) comparing health outcomes between Asian and Black people, we could absolutely change the reference group and interpret the estimates/statistical significance.
+
+What is rarely (if ever) mentioned is the fact that there are other kinds of contrasts for categorical variables. By making smart use of these contrasts, we can address other kinds of hypotheses. After all, the difference contrast is only able to answer one (fairly limited) kind of question: is this category different from all other categories?
+
+We can do better.
+
+To illustrate, we'll take a look at a dataset collected in the Pioneer Valley area in Massachusetts, which measured how many people were using a rail trail (i.e., an old railroad that has been converted into a walking/biking path). I'll flag that linear regression may not be appropriate for analyzing count data (we'll touch on this in a future tutorial), but for the sake of learning, we'll just roll with it. I'll also note that I'm using 2021 dates to categorize seasons, mostly because I'm too lazy to find the right dates for 2005 (when this dataset was collected).
 
 ```{r}
-penguins %>%
-  lm(body_mass_g ~ species + island,
+pioneer_riders <- here("Data", "pioneer_riders.csv") %>%
+  read_csv() %>%
+  select(date, day, riders) %>%
+  mutate(season = case_when(
+    date %within% interval(ymd("2005-03-20"), ymd("2005-06-19")) ~ "Spring",
+    date %within% interval(ymd("2005-06-20"), ymd("2005-09-21")) ~ "Summer",
+    date %within% interval(ymd("2005-09-22"), ymd("2005-12-20")) ~ "Fall"
+  )) %>%
+  mutate(part_of_week = case_when(day == "Friday" ~ "Friday",
+                                  day %in% c("Saturday", "Sunday") ~ "Weekend",
+                                  TRUE ~ "Weekday")) %>%
+  mutate(season = fct_relevel(season, "Spring", "Summer", "Fall"),
+         part_of_week = fct_relevel(part_of_week, "Weekday", "Friday", "Weekend"))
+
+glimpse(pioneer_riders)
+```
+
+Now, let's generate some hypotheses about what predicts the number of bike riders on the path. From personal experience (I love biking along the East Bay Bike Path, which is itself a rail trail running from Providence to Bristol, RI), I might make the following hypotheses:
+
+1. Saturdays are particularly popular. Monday through Friday, you're working. On Fridays, you're tired after getting off work. On Sundays, you're dreading going back to work. So, Saturdays are a great time to get outside and blow off steam.
+2. Here's an alternative hypothesis: Monday through Thursday is not a good time to go biking. By comparison, there's an uptick of people going biking after work on Friday. But compared to any of the weekdays, Saturday and Sunday are the most popular days.
+3. Compared to spring, there are more riders in summer. But compared to summer, there are fewer riders in fall.
+
+## Diference contrast
+
+Let's tackle hypothesis 1. We've already been practicing difference contrasts, so this is review. Use `fct_relevel` to set `Saturday` as the reference category of `day`, then predict `riders ~ day`. What do you conclude from this analysis?
+
+As a point of interest (and this becomes relevant in a moment), we can actually see how the categorical variable is transformed into numeric dummary variables. There are seven days of the week, so we specify:
+
+```{r}
+contr.treatment(7)
+```
+
+As usual, we can see that the first "level" of the categorical variable (row 1) is filled with zeros, and will therefore be reflected in the intercept estimate.
+
+## Helmert contrast
+
+Now let's address our second set of hypotheses. We're going to use something called a ***Helmert contrast***. Our categorical variable is ordered from Weekday to Friday to Weekend. Since we have 3 levels, we have 2 contrasts. First, we want to compare the average of Friday against the average of Weekday. Second, we want to compare the average of Weekend against the average of Weekday *and* Friday. This is what the Helmert allows us to do.
+
+Let's take a look at the mathematical transformation:
+
+```{r}
+contr.helmert(3)
+```
+
+The intuition here is this. In our first contrast, we want to compare levels one and two of our categorical variables, and ignore level three. So in column one, the non-zero numbers tell us that which levels are being included in the contrast, and the sign (positive/negative) tells us how they're being compared. The same goes for column two: we're comparing levels one and two (which sum to $-2$), against the third level (which takes a value of $+2$).
+
+As it turns out, it's really easy to estimate these contrasts in our regression:
+
+```{r}
+pioneer_riders %>%
+  lm(riders ~ part_of_week,
+     contrasts = list(part_of_week = contr.helmert),
      data = .) %>%
   tidy()
 ```
 
-We can use regression to test the questions we actually care about, by making smart use of contrasts.
+The tricky part, as I've mentioned before, is interpreting the cryptic labels for these contrasts. I find that the only way I can keep anything straight is by writing down what each contrast is. We've done that above, so interpret (in plain language) what `part_of_week1` is encoding, then interpret the estimate and p-value as usual. Do the same for `part_of_week2`.
 
-Let's return to the problem of predicting how much rainfall we're going to get. Let's say we have a grandparent who swears they get achey joints every time it rains. We could build a predictive model of rainfall by asking our grandparent how much their joints hurt, on a scale of 1-10. Sure enough, the more their joints hurt, the more rainfall we get a few hours later. Of course, this isn't a perfect system. Sometimes, our grandparent is just feeling achey for no reason.
-
-The purpose of building predictive models is to find predictors that can account for ***variability*** in an outcome variable. So, we can intuitively think of our grandparent's pain rating as a predictor that accounts for some small amount of variability in rainfall.
-
-Of course, there are other predictors that we could be interested in. For example, we might have measurements from a thermometer, barometer, and wind sock, and we think these measurements might help to improve our ability to predict rainfall. This is the motivation behind ***multiple regression***, which is just a fancy way of saying that we want to test a model that has many predictors in it. We could write out this model using math, using the same notation we covered last time:
-
-$ Rainfall = \beta_0 + \beta_1 PainRating + \beta_2 Temperature + \beta_3 Pressure + \beta_4 WindSpeed $
-
-The idea is simple, and it's actually really easy to write the code that performs the analysis. But as we'll see, interpreting the output from this kind of model can be tricky, and requires careful thinking. In particular, we must always remember that our goal is to test hypotheses, and we must not lose sight of this goal when building models.
-
-We'll return to the example of predicting rainfall in a little while; let's dig into some data!
-
-# Extracting information about models
-
-To re-acquaint ourselves with the Palmer Penguins dataset, let's take a `glimpse` at what variables it contains:
+There's one more thing to note about Helmert contrasts: what does the intercept reflect? In the difference contrast, the intercept reflected the average of a reference category. Is it the same in Helmert contrasts? Let's try computing the averages to see.
 
 ```{r}
-penguins %>%
-  glimpse()
+pioneer_riders %>%
+  group_by(part_of_week) %>%
+  summarise(riders = mean(riders))
 ```
 
-Last time, we always estimated the model using `lm`, then immediately piped that to `tidy`. This time, let's do something a little different, and save the model to a variable. Here's an example where I predict body mass using bill depth. The variable name `lm_bd` tells us that we've saved a linear model, and that we're using bill depth as a predictor.
+Nope, that doesn't seem to be it. Instead, the intercept reflects the overall mean across categories, sometimes known as the "grand mean" (which might be a familiar concept if you've ever worked with ANOVAs). Let's prove it:
 
 ```{r}
-lm_bd <- penguins %>%
-  lm(body_mass_g ~ bill_depth_mm,
-     data = .)
+pioneer_riders %>%
+  summarise(riders = mean(riders))
 ```
 
-What's the benefit of doing this? Right now, we're running really simple models, so it only takes a few seconds to estimate the beta weights. Later, as our models become increasingly complex, it takes many minutes to estimate parameters (there have been a few times in my research where I've had to wait upwards of 30 minutes for a single model). So, it's nice to be able to do it once, then save it to memory.
+And there we have it: the overall mean of the categorical variable is the intercept of the Helmert contrast.
 
-The other benefit is that there are a lot of functions we can apply to our model! I really like `tidy` because it turns the results into a nice, tidy tibble:
+## Successive difference contrast
+
+For our third set of hypotheses, we'll use a contrast that's known as ***forward differences*** or ***successive differences***. We think that the number of riders increases in summer (compared to spring), then decreases in fall (compared to summer).
+
+The model specification should look pretty familiar now. The only technical note is about `MASS::contr.sdif`. This is a method for pulling out a single function (`contr.sdif`) from the library `MASS` without having to load the entire library. The operator `::` tells R to look for a particular function within a specified library.
 
 ```{r}
-tidy(lm_bd)
+pioneer_riders %>%
+  lm(riders ~ season,
+     contrasts = list(season = MASS::contr.sdif),
+     data = .) %>%
+  tidy()
 ```
 
-But, we could have alternatively used one of R's base functions to look at the model output:
+So once again, we're left to interpret cryptic-looking contrast labels. The term `season2-1` corresponds to level 2 (summer) minus level 1 (spring), and the positive estimate means that there was an average increase in daily bike riding, though this is not significant. Now try your hand at interpreting `season3-2`.
+
+We'll note that the intercept for this model corresponds neither to a reference category, nor to the grand mean. Why is that? I don't want to get into a discussion about ***orthogonal contrasts*** versus ***non-orthogonal contrasts***, as there are a lot of technical details involved. The basic intuition is that in an orthogonal contrast, no information is re-used. Every contrast accounts for completely unique variance. On the other hand, in a non-orthogonal contrast, some variance is re-used across contrasts. Helmert contrasts are a good example of an orthogonal contrast; difference and successive difference contrasts are non-orthogonal. As a result, the successive difference contrast estimates an intercept that is *close to* the grand mean, but not quite.
+
+# Putting it all together
+
+All in all, we can see that there's a little more complexity when interpreting regression models that have categorical predictors. Ultimately, the complexity comes down to understanding what questions you want to ask, and what contrasts can best help you to answer those questions. We've started to build some intuitions, and a little bit of intuition will take you a long way.
+
+I will note that things can start getting tricky when you start including multiple categorical variables into the same regression model, especially if they use different kinds of contrasts. This is where it becomes critical to have hypotheses in mind, to help you wade through the output of a regression model. We'll try practicing a little bit in just a moment.
+
+I'll also note that there are many other kinds of contrasts that we haven't discussed. There's a great list maintained by [UCLA IDRE](https://stats.idre.ucla.edu/r/library/r-library-contrast-coding-systems-for-categorical-variables/), which is a nice resource for learning more.
+
+Now, let's walk through an example of multiple regression with many categorical variables.
+
+It seems that our friends have many opinions about data analysis. One such friend has looked at some of the "simple" regressions we've done so far, and has suggested that we try building more sophisticated models. They want to examine the number of bike riders on each day of the week, accounting for season. This sounds like an interesting and reasonable set of questions, but how would we actually implement this kind of analysis?
+
+We don't have any directed hypothesis about any particular days of the week; we just want to test whether each day is "more-or-less" popular. Compared to what? We could look at the UCLA IDRE page for inspiration. In cases when we don't have a clear reference group, we notice that we could use a ***deviation contrast***, which compares each category against the grand mean. That sounds like a good fit, given the non-specificity of our hypotheses. However, we don't get a direct contrast for the last level of the categorical variable, so we need to make sure that we define the "ordering" of `day` so that we capture all of the days we really care about. We might say (arbitrarily) that we don't really care about Sunday, and make that the last level of our categorical variable. Let's just try looking at that "simple" regression, for starters.
 
 ```{r}
-summary(lm_bd)
+pioneer_riders %>%
+  mutate(day = fct_relevel(day,
+                           "Monday", "Tuesday", "Wednesday", "Thursday",
+                           "Friday", "Saturday", "Sunday")) %>%
+  lm(riders ~ day,
+     contrasts = list(day = contr.sum),
+     data = .) %>%
+  tidy()
 ```
 
-Here's another function I really like, which allows us to take a `glance` at different model fit metrics. For now, we're only going to worry about `r.squared`.
+The terms are given labels according to their ordering in the categorical variable, so `day1` corresponds to Monday.
+
+Now let's examine this relationship according for season. We already know that we want to test each season against its successor season, so we'll use a successive difference contrast.
 
 ```{r}
-glance(lm_bd)
+pioneer_riders %>%
+  mutate(day = fct_relevel(day,
+                           "Monday", "Tuesday", "Wednesday", "Thursday",
+                           "Friday", "Saturday", "Sunday")) %>%
+  lm(riders ~ day + season,
+     contrasts = list(day = contr.sum,
+                      season = MASS::contr.sdif),
+     data = .) %>%
+  tidy()
 ```
 
-In our rainfall example, we know that our grandparent's pain rating is somewhat predictive of rain. But we also know that it's a very "noisy" measure. Although our grandparent is okay at predicting rain on average, there are plenty of times where they aren't very accurate at all. Of all the variance in rainfall, perhaps our grandparent's pain rating only accounts for 10% of it. This is an intuitive example of a predictor that is statistically significant, but doesn't account for much of the variance in the outcome variable. We can quantify this using $R^2$: of all the variance in the outcome variable, what percent of it is accounted for by our predictors? We can see that bill depth accounts for 22% of the variance in body mass. This isn't terrible, but there's a lot of room for improvement.
+What can we say about statistically significant effects of day and season on bike riding? Compared to summer, how many bike riders do you expect to see on a Wednesday in fall?
 
-# Review
-
-Now, try predicting body mass using flipper length. Save the estimated model in a variable called `lm_fl`, then take a look at the results. If you need a hint, take a look at my code.
+As usual, it helps to be able to visualize data in a plot. Try recreating this on your own, and peek at my code if you need help.
 
 ```{r class.source = 'fold-hide'}
-lm_fl <- penguins %>%
-  lm(body_mass_g ~ flipper_length_mm,
-     data = .)
-
-lm_fl %>% tidy()
+pioneer_riders %>%
+  mutate(day = fct_relevel(day,
+                           "Monday", "Tuesday", "Wednesday", "Thursday",
+                           "Friday", "Saturday", "Sunday")) %>%
+  group_by(day, season) %>%
+  summarise(riders = mean(riders), .groups = "drop") %>%
+  ggplot(aes(x=day, y=riders, fill=day)) +
+  facet_grid(cols = vars(season)) +
+  geom_bar(stat = "identity", position = position_dodge(), show.legend = FALSE) +
+  scale_x_discrete(guide = guide_axis(n.dodge = 2))
 ```
-
-Great, now let's do the same thing, but using bill length as a predictor. Save the model in `lm_bl`.
-
-```{r class.source = 'fold-hide'}
-lm_bl <- penguins %>%
-  lm(body_mass_g ~ bill_length_mm,
-     data = .)
-
-lm_bl %>% tidy()
-```
-
-# Shared variance
-
-Now that we've estimated those two simple regressions, let's take a look at how much flipper and bill length (on their own) account for the variance in body mass.
-
-```{r}
-lm_fl %>% glance()
-lm_bl %>% glance()
-```
-
-We can see that flipper length accounts for 76% of the variance, and bill length accounts for 35%. Not bad! How much of an improvement would we expect to see if we performed multiple regression with these predictors? Naively, we might say $76 + 35 = 111$, except... that can't be right, because perfect prediction is capped at 100%.
-
-Let's just try it and see what result we get.
-
-```{r class.source = 'fold-hide'}
-lm_fl_bl <- penguins %>%
-  lm(body_mass_g ~ flipper_length_mm + bill_length_mm,
-     data = .)
-
-lm_fl_bl %>% glance()
-```
-
-What the heck? On its own, flipper length explained 76% of the variance in body mass. Adding beak length doesn't seem to help all that much!
-
-This is the problem of shared variance, and we're going to return to our rainfall example to understand it.
-
-Why does our poor grandparent feel joint pain when it's about to rain? There's some good medical evidence that joint pain is (in part) caused by low atmospheric pressure. Coincidentally, low atmospheric pressure often precedes rainfall. So if we're able to measure atmospheric pressure using a barometer, does our grandparent's pain rating matter? Yes in the sense that we like our grandparent, but no in the sense that their pain rating doesn't provide useful predictive information above-and-beyond what the barometer can tell us. In other words, if we know what the barometer reading is, then our grandparent's pain rating doesn't tell us anything we didn't already know. So, even if we use our grandparent's pain rating in the same predictive model as barometric pressure, it doesn't account for very much additional variance in rainfall outcomes. This is because the barometer reading and our grandparent's pain rating *share variance* with each other.
-
-So let's return to our penguins. If we include both flipper and bill length in our model, what are some reasons why it might not have a very big impact on variance explained, compared to a simpler model that only includes flipper length?
-
-Let's take a look at the model results too:
-
-```{r}
-lm_fl_bl %>% tidy()
-```
-
-On its own, we saw that bill length significantly predicted body mass. But in a regression that also includes flipper length, we see that it's no longer significant. We might say something like this: "*Adjusting for* flipper length, there is a non-significant effect of bill length on body mass." You might also hear this as "*controlling for* flipper length" or something like "*holding flipper length constant*..."
-
-What does that mean? Let's say that you've got two penguins, Archie and Betty. Both of them have the exact same flipper length, but Archie's bill is 5mm longer. Can you predict how much heavier Archie is than Betty? This is a very easy thing to compute, because we're making a prediction using bill length, holding flipper length constant. Of course, in the real world, it's very doubtful that we'd be able to find a colony of penguins that all have the exact same flipper length. Despite this, we want to be able to say something about the relationship between bill length and body mass.
-
-Regression does this by finding ***semi-partial*** estimates of the relationship strength between each predictor and your outcome variable. This is a fancy way of saying that the beta estimates reflect each predictor's *unique* contribution to the overall variance explained in the outcome variable.
-
-Let's see if we can plot these data to get an intuitive sense for these results. Our regression results demonstrated a very strong relationship between flipper length and body mass. If there were an *additional* relationship between bill length and body mass (above-and-beyond an effect of flipper length), what would we expect to see? Keeping flipper length constant, we'd expect to see that longer bills are associated with greater body mass. In the plot below, that means for any single point on the x-axis, you'd expect to see bills getting longer as you move from bottom-to-top. Clear as mud? Try this: take your mouse cursor (or finger), and place it on the x-axis where flipper length is 200mm. As you move from the bottom of the plot to the top, we'd expect to see purple dots first, then pink, then orange. That's not what we observe, though, and this is why there isn't a significant effect of bill length on body mass, keeping flipper length constant (i.e., adjusting/controlling for flipper length). You can try doing the same thing with any flipper length; there's never any systematic pattern. So, we cannot reject the nihilist's null hypothesis.
-
-```{r}
-penguins %>%
-  ggplot(aes(x=flipper_length_mm, y=body_mass_g, color=bill_length_mm)) +
-  geom_point() +
-  scale_colour_viridis_b(option = "plasma")
-```
-
-# Prediction and hypothesis-testing
-
-In this tutorial, I've framed model-building as a problem of "prediction", whereas I framed model-building as a problem of "hypothesis testing" in the previous tutorial. There are times when these goals diverge (many data scientists care primarily about prediction, whereas many scientists care primarily about hypothesis testing... but this is a very broad generalization), but we are going to try our best to make sure that we consider model-building from both perspectives.
-
-Why might we have a hypothesis that bill length is relevant for body mass? Last time, I made up a reason: penguins with longer bills are more efficient at finding food than penguins that have shorter bills. Maybe! But we'd expect larger penguins to have longer bills to begin with. So, in our analysis, we want to find a measure that allows us to "control for" penguin size when predicting their body mass. Flipper length seems like a reasonable metric for this, so we include it in the model. To the extent that longer bills actually improve a penguin's ability to find food, we should be able to see a significant effect of bill length on body mass ***controlling for*** (or, equivalently, ***adjusting for***) flipper length. However, in the analysis, we don't see this prediction being confirmed, so we cannot reject the nihilist's null hypothesis (i.e., that bill length doesn't matter).
-
-That is an example of how a hypothesis can be tested in the context of multiple regression. It is also an example of how easily people can make up hypotheses to fit whatever pattern of results they observe after running the test. This is known as HARKing (Hypothesizing After Results are Known), and it is a logical fallacy. When you're doing research "for real", you want to make sure that you know what hypotheses you're testing *before* you do any statistical tests. We'll discuss why this is a problem in a future tutorial. For educational purposes, we can't magically generate new data out of nowhere, so we are going to continue performing statistical analyses sans hypothesis. Just remember that we're only doing it to teach you the techniques!
-
-# Interpreting model estimates
-
-Now, let's estimate a model that uses bill length and depth as predictors. Save it to `lm_bl_bd`, then compare the model fit against `lm_bl` and `lm_bd`. What do you notice about this multiple regression? Do you think bill length and bill depth share a lot of variance with each other?
-
-```{r class.source = 'fold-hide'}
-lm_bl_bd <- penguins %>%
-  lm(body_mass_g ~ bill_length_mm + bill_depth_mm,
-     data = .)
-
-lm_bl_bd %>% glance()
-lm_bl %>% glance()
-lm_bd %>% glance()
-```
-
-Now let's take a look at this model output:
-
-```{r}
-lm_bl_bd %>% tidy()
-```
-
-Remember our linear model equation from last time? Write out the equation for this model. Now that you have it written out, can you reason through what the regression intercept tells us?
-
-Think about it a little more before continuing... If you said that the intercept is the average penguin's body mass when it has a bill that is $0$mm long and $0$mm deep, then you're right. Is that a meaningful estimate? Why or why not?
-
-Now let's move on to the estimate for bill length. What does this number mean? Try explaining it out loud before reading further... This estimate says that for every $1$mm increase in bill length, a penguin's body mass increases by $75.28$g on average, *adjusting for bill depth*. This is the semi-partial estimate. Do you remember what that means? If not, scroll up to review. In this context, it means that no matter what a penguin's bill depth is, we know that a $1$mm increase in bill length is associated with a $75.28$g increase in body mass.
-
-Try your hand at explaining the estimate for bill depth.
 
 # Exercises
 
-Let's revisit the dataset from the previous tutorial. Since we're learning multiple regression using continuous variables, we'll only work with a subset of the variables. As a reminder, the researchers were studying people's willingness to self-isolate during covid-19. People were shown a threatening or prosocial message, then made ratings about their emotions and their willingness to self-isolate. They were also given a personality questionnaire that measured their extraversion and neuroticism.
+In our exercises, we'll be working with a dataset originally reported in the Washington Post. They used data from the National Center for Education Statistics to quantify the proportion of grade-school students from various racial backgrounds. We'll be combining that dataset with information about each state's regional classification to see whether there are different patterns of diversity in different regions.
 
-- willingness: tells you how willing a subject is to self-isolate after reading the message (0=not willing, 100=extremely willing)
-- valence: how positive or negative a subject's emotions were after reading the message (higher numbers = more positive)
-- arousal: how "activated" a subject's emotions were after reading the message (higher numbers = more activated)
-- extraversion: how much an individual is extraverted or introverted (higher numbers = more extraverted)
-- neuroticism: how much an individual is prone to feeling negative emotions (higher numbers = more neurotic)
+Here's the code to get the data tidied up. Just this once, you have permission to copy/paste it, but you should check to make sure that you have at least a conceptual understanding of what each pipe is doing.
 
-```{r eval=FALSE}
-covid_intervention <- here("Data", "covid_intervention.csv") %>%
+```{r}
+us_regions <- tibble(state_name = state.name,
+                     state_abb = state.abb,
+                     state_region = state.region)
+
+school <- here("Data", "school_diversity.csv") %>%
   read_csv() %>%
-  mutate(keep = if_else(sub %% 2 == 0, "threat", "prosocial")) %>%
-  filter(keep == intervention) %>%
-  select(sub, willingness, valence, arousal, extraversion = bfi_extraversion, neuroticism = bfi_neuroticism)
+  clean_names() %>%
+  rename(school_id = leaid,
+         district_id = lea_name,
+         state = st,
+         district_type = d_locale_txt,
+         native = aian,
+         total_students = total) %>%
+  select(school_id:total_students) %>%
+  left_join(us_regions, by = c("state"="state_abb")) %>%
+  separate(district_type, into = c("urbanicity", "district_size")) %>%
+  filter(school_year == "2016-2017") %>%
+  mutate(urbanicity = fct_relevel(urbanicity, "rural", "town", "suburban"))
 ```
 
-## Exercise 1
+Let's take a look at what the dataset looks like. The variables `native` through `multi` refer to different racial groups, and encode the proportion of students (in each county) who belong to each group.
 
-An affective scientist is interested in understanding how a person's emotions affect their willingness to self-isolate. They hypothesize that the more negative and activated a person feels, the more willing they would be to self-isolate. Therefore, the model they want to test looks like this: $ Willingness = \beta_0 + \beta_1 Valence + \beta_2 Arousal $.
+```{r}
+glimpse(school)
+```
 
-What would the estimate of $\beta_0$ tell you? How about $\beta_1$ and $\beta_2$?
+Based on large-scale human migration trends in U.S. history, let's generate some hypotheses to test.
 
-Estimate this model and look at the results. Remember, you're performing a hypothesis test, so make sure to think about whether the hypotheses are supported. Interpret the results in plain language so that a non-scientist could understand. In your explanation, make sure to describe what the estimates and p-values mean.
+1. For a disgracefully long period in U.S. history, Black Americans were forced into slavery, which was concentrated in the South. During the period of the "Great Migration", many Black people moved out of the South into the Northeast and (some) of the North Central states. Though some went West, there were fewer who were able to make such a long journey. Therefore, it is reasonable to expect that there might be a smaller proportion of Black children enrolled in public schools in the West, compared to the other three regions.
+2. Much of the Asian immigration into the U.S. coincided with expansion into the West. Therefore, we would expect to see greater enrollment of Asian children in the West, compared to other regions.
+3. For most of the racial groups defined in this dataset, we might expect that as urbanicity increases (rural, town, suburban, urban), so will the proportion of students enrolled in school. Therefore, in the two above analyses, it will be important to account for urbanicity in the analysis when examining the effect of region.
+4. There are two racial groups that buck this trend: whites and Native Americans (defined as American Indian and Alaskan Native in this dataset). This country has shamefully stolen the land of Native Americans, and sovereign Native governments exist primarily in rural areas. We can try testing whether we can observe this pattern in the data. Again, it is a good idea to account for potential regional differences in the analysis as well.
+5. Any others? Try crowdsourcing hypotheses from friends.
 
-Now take a look at the model's $R^2$. What does this tell you about this model's ability to predict willingness to self-isolate?
+As usual, it's a good idea to try plotting the data. As you've probably experienced while working through these tutorials, it's helpful to reference a plot when making sense of regression results. Here's a plot I made. Try recreating it on your own. (Hints: Try putting `urbanicity` on the x-axis and `proportion` on the y-axis, as you normally would. Then, see what `coord_flip` can do for you. Can't get the labels to show up in the right order? Check out the documentation for `fct_rev`.)
 
-Okay, now let's think about shared variance. Estimate simple regressions that predict willingness using *either* valence *or* arousal. Compare these simple regressions against the multiple regression. Interpret the beta estimates, p-values, and $R^2$.
+```{r echo=FALSE}
+school %>%
+  pivot_longer(cols = native:multi,
+               names_to = "race",
+               values_to = "proportion") %>%
+  group_by(urbanicity, state_region, race) %>%
+  summarise(proportion = mean(proportion), .groups = "drop") %>%
+  drop_na() %>%
+  mutate(urbanicity = fct_rev(urbanicity)) %>%
+  ggplot(aes(x=urbanicity, y=proportion)) +
+  facet_grid(rows = vars(race), cols = vars(state_region)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  coord_flip()
+```
 
-## Exercise 2
+Now, it's time to move onto the formal analysis. When addressing each of our research questions, think about different contrasts and what they can tell us. We've covered difference, Helmert, successive difference, and deviation contrasts. You might also find it interesting to look into polynomial contrasts. Is there a single best contrast for each research question? Not necessarily. Whatever choices you make, you should be prepared to defend your reasoning and justify your choices.
 
-A personality scientist wants to know how extraversion and neuroticism affect people's willingness to self-isolate.
-
-List out plausible hypotheses. Write down the mathematical formula for the regression model to test these hypotheses. Estimate the model and interpret it. What do you conclude?
-
-The affective scientist has taken note of the personality variables, and thinks that it might be important to control for those variables when examining the effects of emotion on willingness to self-isolate. What would it mean to control for those personality variables? How might that change the estimates for the emotion variables, if there's a lot of shared variance? Now, estimate the model. What do you conclude about the shared variance between the emotion and personality variables?
-
+For each of the research questions, what do you conclude? Make sure to interpret your regression models' estimates and p-values when justifying your conclusions.
 

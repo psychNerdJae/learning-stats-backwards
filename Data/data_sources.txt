@@ -3,3 +3,12 @@ Data sources (in approx order of introduction/use in tutorials):
 covid-19 self-isolation study
 https://github.com/jpheffne/covid_intervention
 
+Pioneer Valley riders
+https://r-data.pmagunia.com/dataset/r-dataset-package-mosaicdata-riders
+
+School diversity
+https://github.com/rfordatascience/tidytuesday/tree/master/data/2019/2019-09-24
+https://github.com/WPMedia/student_integration_analysis
+
+State classifications into regions and divisions from the US Census
+Adapted from: https://www2.census.gov/geo/pdfs/maps-data/maps/reference/us_regdiv.pdf
