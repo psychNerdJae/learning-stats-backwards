@@ -30,7 +30,7 @@ The purpose of building predictive models is to find predictors that can account
 
 Of course, there are other predictors that we could be interested in. For example, we might have measurements from a thermometer, barometer, and wind sock, and we think these measurements might help to improve our ability to predict rainfall. This is the motivation behind ***multiple regression***, which is just a fancy way of saying that we want to test a model that has many predictors in it. We could write out this model using math, using the same notation we covered last time:
 
-$ Rainfall = \beta_0 + \beta_1 PainRating + \beta_2 Temperature + \beta_3 Pressure + \beta_4 WindSpeed $
+$Rainfall = \beta_0 + \beta_1 PainRating + \beta_2 Temperature + \beta_3 Pressure + \beta_4 WindSpeed$
 
 The idea is simple, and it's actually really easy to write the code that performs the analysis. But as we'll see, interpreting the output from this kind of model can be tricky, and requires careful thinking. In particular, we must always remember that our goal is to test hypotheses, and we must not lose sight of this goal when building models.
 
@@ -73,7 +73,8 @@ Here's another function I really like, which allows us to take a `glance` at dif
 glance(lm_bd)
 ```
 
-In our rainfall example, we know that our grandparent's pain rating is somewhat predictive of rain. But we also know that it's a very "noisy" measure. Although our grandparent is okay at predicting rain on average, there are plenty of times where they aren't very accurate at all. Of all the variance in rainfall, perhaps our grandparent's pain rating only accounts for 10% of it. This is an intuitive example of a predictor that is statistically significant, but doesn't account for much of the variance in the outcome variable. We can quantify this using $R^2$: of all the variance in the outcome variable, what percent of it is accounted for by our predictors? We can see that bill depth accounts for 22% of the variance in body mass. This isn't terrible, but there's a lot of room for improvement.
+In our rainfall example, we know that our grandparent's pain rating is somewhat predictive of rain. But we also know that it's a very "noisy" measure. Although our grandparent is okay at predicting rain on average, there are plenty of times where they aren't very accurate at all. Of all the variance in rainfall, perhaps our grandparent's pain rating only accounts for 10% of it. This is an intuitive example of a predictor that is statistically significant, but doesn't account for much of the variance in the outcome variable. We can quantify this using $R^2$: of all the variance in the outcome variable, what percent of it is accounted for by our predictors? We can see that bill depth accounts for 22% of the variance in body mass. This isn't terrible, but there's a lot of room for improvement. 
+
 
 # Review
 
@@ -203,7 +204,7 @@ covid_intervention <- here("Data", "covid_intervention.csv") %>%
 
 ## Exercise 1
 
-An affective scientist is interested in understanding how a person's emotions affect their willingness to self-isolate. They hypothesize that the more negative and activated a person feels, the more willing they would be to self-isolate. Therefore, the model they want to test looks like this: $ Willingness = \beta_0 + \beta_1 Valence + \beta_2 Arousal $.
+An affective scientist is interested in understanding how a person's emotions affect their willingness to self-isolate. They hypothesize that the more negative and activated a person feels, the more willing they would be to self-isolate. Therefore, the model they want to test looks like this: $Willingness = \beta_0 + \beta_1 Valence + \beta_2 Arousal$.
 
 What would the estimate of $\beta_0$ tell you? How about $\beta_1$ and $\beta_2$?
 

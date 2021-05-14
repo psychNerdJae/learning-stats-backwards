@@ -1,0 +1,335 @@
+---
+title: "Session 4: Multiple regression II: categorical variables"
+author: "Jae-Young Son"
+output:
+  html_document:
+    code_folding: show
+    toc: TRUE
+    toc_float: TRUE
+---
+
+This document was most recently knit on `r Sys.Date()`.
+
+# Setup
+
+As usual, let's call some libraries before we get started. If you don't have `janitor` installed, run `install.packages("janitor")` in your console.
+
+```{r message=FALSE}
+library(tidyverse)
+library(broom)
+library(knitr)
+library(here)
+library(palmerpenguins)
+library(lubridate)
+library(janitor)
+```
+
+# Review
+
+By now, we're comfortable with the idea that changes in an outcome variable can depend on many predictors. We've considered that in multiple regression, the beta coefficients reflect semi-partial estimates, which reflect each predictor's unique contribution to variabililty in the outcome variable. In the previous session, we played around with these ideas using continuous variables. Now, we are ready to tackle multiple regression using categorical predictors.
+
+It is commonly said that categorical variables make regression analyses more complicated. It is true that you need to have a better intuition for what the model is doing "under the hood", and it is also true (for whatever reason) that this is not typically taught very well in statistics classes. However, the intuitions are not so hard to learn. As you'll soon see, the hardest part of working with categorical variables will be deciphering obscure-looking predictor labels in the regression output.
+
+A few sessions ago, we performed "simple" regressions with a single categorical variable. Let's revisit that analysis. We wanted to test whether different penguin species have different average body mass. By default, the regression model estimated a ***difference contrast***, which used one category (Adelie penguins) as the reference category and estimated the *difference* in body mass between Adelie penguins and Chinstrap/Gentoo penguins.
+
+```{r}
+penguins %>%
+  lm(body_mass_g ~ species,
+     data = .) %>%
+  tidy()
+```
+
+Recall also that in our code, the regression formula is specified using "Wilkinson notation". How do we write that out into a mathematical equation? Based on Wilkinson notation, most people would guess:
+
+$BodyMass = \beta_0 + \beta_1 Species$
+
+But that is not correct. Remember that we need to find ways to translate categories into numbers, as regression models deal in numbers. Specifically, we need to define $k-1$ predictors, where $k$ is the number of categories within a variable. The variable `species` contains three categories (Adelie, Chinstrap, and Gentoo), so we need two predictors. If you need a refresher on why this is the case, you can find details in Session 2.
+
+So the regression equation is actually written out like this:
+
+$BodyMass = \beta_0 + \beta_1 IsChinstrap + \beta_2 IsGentoo$
+
+Test yourself: where did the Adelie penguins go? Why is the first predictor called "Is Chinstrap?", and what does the corresponding dummy variable look like?
+
+This makes intuitive sense if you look at the regression output. Every row of the output reflects the value of an estimated beta coefficient, so we need a beta coefficient for every term. Specifying a single predictor for `Species` doesn't make sense because that doesn't leave enough beta coefficients for the two difference contrasts (Adelie vs Chinstrap, and Adelie vs Gentoo).
+
+A surprisingly large number of people never realize this, and report mis-specified regression equations even in published work.
+
+What's the value of knowing this? It occasionally allows us to use clever little tricks in our analyses, which can help us extract more useful information from our models. For example, we can specify a model that has no intercept. In the absence of an intercept term, we need an extra dummy variable to tell us whether a given penguin "Is Adelie?". Try writing out that regression equation. Let's take a look at what this model output looks like:
+
+```{r}
+penguins %>%
+  lm(body_mass_g ~ 0 + species,
+     data = .) %>%
+  tidy()
+```
+
+We can see that the intercept term has been replaced by `speciesAdelie`, which has the same estimate, standard error, t-value, and p-value. But, since there's no more reference category, the estimates for `speciesChinstrap` and `speciesGentoo` reflect the average body mass for those species, not the average *difference* in body mass between those species and Adelie penguins. This can sometimes be useful, though in practice it's usually preferable to estimate an intercept term.
+
+So, what was the point of this demonstration? We can see that building just a little bit of intuition goes a long way in helping us understand the mechanics of how our models work. This gives us the power to interpret our models in a more sophisticated way, and to even *specify* our models to test the questions we really care about. Do you want to compare Chinstrap and Gentoo penguins against Adelie penguins? Use a difference contrast. Do you want to know the average weight of each species, without reference to any particular species? Get rid of the intercept term. We'll now build on these intuitions and introduce new ways of thinking about categorical variables.
+
+# Change depends on many categories
+
+Without knowing it, we've already performed multiple regression with categorical variables, in the sense that a single categorical variable must be decomposed into multiple dummy variables, which are used as predictors. Now, we'll expand our toolbox so that we can interpret models with multiple categorical variables.
+
+It is reasonable to expect that different penguin species will have different average body masses. Another reasonable expectation is that males will have greater body mass than females.
+
+Let's first plot out those data to get a sense for what our analysis will be doing. Try to recreate this plot on your own, and peek at my code if you get stuck.
+
+```{r class.source = 'fold-hide'}
+penguins %>%
+  group_by(species, sex) %>%
+  summarise(body_mass_g = mean(body_mass_g, na.rm = T), .groups = "drop") %>%
+  drop_na() %>%
+  ggplot(aes(x=species, y=body_mass_g, fill=sex)) +
+  geom_bar(stat = "identity", position = position_dodge())
+```
+
+We can examine both of these variables in the same model using familiar notation:
+
+```{r}
+penguins %>%
+  lm(body_mass_g ~ species + sex,
+     data = .) %>%
+  tidy()
+```
+
+Let's practice reading out this table. We'll note that `sex` has two categories, `female` and `male`. Yet, there's seemingly only one estimate. Where did female penguins go? Just as we need a reference category for species, we need a reference category for sex. The intercept therefore reflects the estimated average body mass of *female Adelie* penguins. The semi-partial estimate for `sexmale` tells us how much heavier *male* penguins are, *adjusting for species*... so this means that on average, male penguins are $668$ grams heavier than female penguins.
+
+The estimate for `speciesGentoo` is now the difference contrast for female Gentoo penguins, compared to female Adelie penguins. So, we can see that female Gentoos are $1378$ grams heavier than female Adelies, a statistically significant difference. What if we wanted to compare *male* Gentoos against female Adelies? We would add the estimate of `speciesGentoo` to the estimate of `sexmale`. Male Gentoos are therefore $1378 + 668 = 2046$ grams heavier than female Adelies. How heavy is that, in absolute terms? Simply add the intercept estimate. Male Gentoos, on average, have a body mass of $3372 + 1378 + 668 = 5418$ grams.
+
+Okay, now you try: Compared to a male Adelie, what's the average body mass difference for a male Chinstrap? How much mass is that, in absolute terms?
+
+## Practice
+
+In the dataset, there are also observations about what island each penguin lived on: Biscoe, Dream, and Torgersen. Your ecologist friend has a hypothesis that Biscoe Island has richer food sources than the other islands, which causes penguins from that island to have greater body mass. Test this hypothesis using only `island` predictors. What do you conclude? Make sure to interpret the estimates and p-values in plain language.
+
+Your biologist friend happens to overhear the conversation, and suggests that you also add predictors for penguin `species` to that model. What do you conclude? Make sure to interpret every term in context. For example, what does the intercept mean?
+
+Your ecologist and biologist friends are confused by the discrepancies between the two models. Visualizations can often help us make sense of data, so create a barplot illustrating mean body mass, as a function of species and island. What does this visualization tell you about the model results? Are there predictors that we should consider removing from the model, and if so, why?
+
+# Contrasts
+
+So far, we have only considered the difference contrast, which compares all levels of a categorical variable against a reference category. In many introductory statistics classes, this is the only contrast that is ever covered. Oftentimes, it is also suggested that a researcher must obligatorily pick a single reference category. For example, if a researcher is studying health outcomes by racial background, they are often taught that they must pick a single racial group to be the reference category, and to limit their analysis to comparing other racial groups against the reference category. For a variety of reasons, this usually means (in the U.S.) that whites are chosen to be the reference group, and all racial minorities are only examined in contrast to whites. We have already seen (in Session 2) that this view is mistaken. Changing the reference category does not change what information is provided to the model; it only re-parameterizes it. So, if we were interested in (e.g.) comparing health outcomes between Asian and Black people, we could absolutely change the reference group and interpret the estimates/statistical significance.
+
+What is rarely (if ever) mentioned is the fact that there are other kinds of contrasts for categorical variables. By making smart use of these contrasts, we can address other kinds of hypotheses. After all, the difference contrast is only able to answer one (fairly limited) kind of question: is this category different from all other categories?
+
+We can do better.
+
+To illustrate, we'll take a look at a dataset collected in the Pioneer Valley area in Massachusetts, which measured how many people were using a rail trail (i.e., an old railroad that has been converted into a walking/biking path). I'll flag that linear regression may not be appropriate for analyzing count data (we'll touch on this in a future tutorial), but for the sake of learning, we'll just roll with it. I'll also note that I'm using 2021 dates to categorize seasons, mostly because I'm too lazy to find the right dates for 2005 (when this dataset was collected).
+
+```{r}
+pioneer_riders <- here("Data", "pioneer_riders.csv") %>%
+  read_csv() %>%
+  select(date, day, riders) %>%
+  mutate(season = case_when(
+    date %within% interval(ymd("2005-03-20"), ymd("2005-06-19")) ~ "Spring",
+    date %within% interval(ymd("2005-06-20"), ymd("2005-09-21")) ~ "Summer",
+    date %within% interval(ymd("2005-09-22"), ymd("2005-12-20")) ~ "Fall"
+  )) %>%
+  mutate(part_of_week = case_when(day == "Friday" ~ "Friday",
+                                  day %in% c("Saturday", "Sunday") ~ "Weekend",
+                                  TRUE ~ "Weekday")) %>%
+  mutate(season = fct_relevel(season, "Spring", "Summer", "Fall"),
+         part_of_week = fct_relevel(part_of_week, "Weekday", "Friday", "Weekend"))
+
+glimpse(pioneer_riders)
+```
+
+Now, let's generate some hypotheses about what predicts the number of bike riders on the path. From personal experience (I love biking along the East Bay Bike Path, which is itself a rail trail running from Providence to Bristol, RI), I might make the following hypotheses:
+
+1. Saturdays are particularly popular. Monday through Friday, you're working. On Fridays, you're tired after getting off work. On Sundays, you're dreading going back to work. So, Saturdays are a great time to get outside and blow off steam.
+2. Here's an alternative hypothesis: Monday through Thursday is not a good time to go biking. By comparison, there's an uptick of people going biking after work on Friday. But compared to any of the weekdays, Saturday and Sunday are the most popular days.
+3. Compared to spring, there are more riders in summer. But compared to summer, there are fewer riders in fall.
+
+## Diference contrast
+
+Let's tackle hypothesis 1. We've already been practicing difference contrasts, so this is review. Use `fct_relevel` to set `Saturday` as the reference category of `day`, then predict `riders ~ day`. What do you conclude from this analysis?
+
+As a point of interest (and this becomes relevant in a moment), we can actually see how the categorical variable is transformed into numeric dummary variables. There are seven days of the week, so we specify:
+
+```{r}
+contr.treatment(7)
+```
+
+As usual, we can see that the first "level" of the categorical variable (row 1) is filled with zeros, and will therefore be reflected in the intercept estimate.
+
+## Helmert contrast
+
+Now let's address our second set of hypotheses. We're going to use something called a ***Helmert contrast***. Our categorical variable is ordered from Weekday to Friday to Weekend. Since we have 3 levels, we have 2 contrasts. First, we want to compare the average of Friday against the average of Weekday. Second, we want to compare the average of Weekend against the average of Weekday *and* Friday. This is what the Helmert allows us to do.
+
+Let's take a look at the mathematical transformation:
+
+```{r}
+contr.helmert(3)
+```
+
+The intuition here is this. In our first contrast, we want to compare levels one and two of our categorical variables, and ignore level three. So in column one, the non-zero numbers tell us that which levels are being included in the contrast, and the sign (positive/negative) tells us how they're being compared. The same goes for column two: we're comparing levels one and two (which sum to $-2$), against the third level (which takes a value of $+2$).
+
+As it turns out, it's really easy to estimate these contrasts in our regression:
+
+```{r}
+pioneer_riders %>%
+  lm(riders ~ part_of_week,
+     contrasts = list(part_of_week = contr.helmert),
+     data = .) %>%
+  tidy()
+```
+
+The tricky part, as I've mentioned before, is interpreting the cryptic labels for these contrasts. I find that the only way I can keep anything straight is by writing down what each contrast is. We've done that above, so interpret (in plain language) what `part_of_week1` is encoding, then interpret the estimate and p-value as usual. Do the same for `part_of_week2`.
+
+There's one more thing to note about Helmert contrasts: what does the intercept reflect? In the difference contrast, the intercept reflected the average of a reference category. Is it the same in Helmert contrasts? Let's try computing the averages to see.
+
+```{r}
+pioneer_riders %>%
+  group_by(part_of_week) %>%
+  summarise(riders = mean(riders))
+```
+
+Nope, that doesn't seem to be it. Instead, the intercept reflects the overall mean across categories, sometimes known as the "grand mean" (which might be a familiar concept if you've ever worked with ANOVAs). Let's prove it:
+
+```{r}
+pioneer_riders %>%
+  summarise(riders = mean(riders))
+```
+
+And there we have it: the overall mean of the categorical variable is the intercept of the Helmert contrast.
+
+## Successive difference contrast
+
+For our third set of hypotheses, we'll use a contrast that's known as ***forward differences*** or ***successive differences***. We think that the number of riders increases in summer (compared to spring), then decreases in fall (compared to summer).
+
+The model specification should look pretty familiar now. The only technical note is about `MASS::contr.sdif`. This is a method for pulling out a single function (`contr.sdif`) from the library `MASS` without having to load the entire library. The operator `::` tells R to look for a particular function within a specified library.
+
+```{r}
+pioneer_riders %>%
+  lm(riders ~ season,
+     contrasts = list(season = MASS::contr.sdif),
+     data = .) %>%
+  tidy()
+```
+
+So once again, we're left to interpret cryptic-looking contrast labels. The term `season2-1` corresponds to level 2 (summer) minus level 1 (spring), and the positive estimate means that there was an average increase in daily bike riding, though this is not significant. Now try your hand at interpreting `season3-2`.
+
+We'll note that the intercept for this model corresponds neither to a reference category, nor to the grand mean. Why is that? I don't want to get into a discussion about ***orthogonal contrasts*** versus ***non-orthogonal contrasts***, as there are a lot of technical details involved. The basic intuition is that in an orthogonal contrast, no information is re-used. Every contrast accounts for completely unique variance. On the other hand, in a non-orthogonal contrast, some variance is re-used across contrasts. Helmert contrasts are a good example of an orthogonal contrast; difference and successive difference contrasts are non-orthogonal. As a result, the successive difference contrast estimates an intercept that is *close to* the grand mean, but not quite.
+
+# Putting it all together
+
+All in all, we can see that there's a little more complexity when interpreting regression models that have categorical predictors. Ultimately, the complexity comes down to understanding what questions you want to ask, and what contrasts can best help you to answer those questions. We've started to build some intuitions, and a little bit of intuition will take you a long way.
+
+I will note that things can start getting tricky when you start including multiple categorical variables into the same regression model, especially if they use different kinds of contrasts. This is where it becomes critical to have hypotheses in mind, to help you wade through the output of a regression model. We'll try practicing a little bit in just a moment.
+
+I'll also note that there are many other kinds of contrasts that we haven't discussed. There's a great list maintained by [UCLA IDRE](https://stats.idre.ucla.edu/r/library/r-library-contrast-coding-systems-for-categorical-variables/), which is a nice resource for learning more.
+
+Now, let's walk through an example of multiple regression with many categorical variables.
+
+It seems that our friends have many opinions about data analysis. One such friend has looked at some of the "simple" regressions we've done so far, and has suggested that we try building more sophisticated models. They want to examine the number of bike riders on each day of the week, accounting for season. This sounds like an interesting and reasonable set of questions, but how would we actually implement this kind of analysis?
+
+We don't have any directed hypothesis about any particular days of the week; we just want to test whether each day is "more-or-less" popular. Compared to what? We could look at the UCLA IDRE page for inspiration. In cases when we don't have a clear reference group, we notice that we could use a ***deviation contrast***, which compares each category against the grand mean. That sounds like a good fit, given the non-specificity of our hypotheses. However, we don't get a direct contrast for the last level of the categorical variable, so we need to make sure that we define the "ordering" of `day` so that we capture all of the days we really care about. We might say (arbitrarily) that we don't really care about Sunday, and make that the last level of our categorical variable. Let's just try looking at that "simple" regression, for starters.
+
+```{r}
+pioneer_riders %>%
+  mutate(day = fct_relevel(day,
+                           "Monday", "Tuesday", "Wednesday", "Thursday",
+                           "Friday", "Saturday", "Sunday")) %>%
+  lm(riders ~ day,
+     contrasts = list(day = contr.sum),
+     data = .) %>%
+  tidy()
+```
+
+The terms are given labels according to their ordering in the categorical variable, so `day1` corresponds to Monday.
+
+Now let's examine this relationship according for season. We already know that we want to test each season against its successor season, so we'll use a successive difference contrast.
+
+```{r}
+pioneer_riders %>%
+  mutate(day = fct_relevel(day,
+                           "Monday", "Tuesday", "Wednesday", "Thursday",
+                           "Friday", "Saturday", "Sunday")) %>%
+  lm(riders ~ day + season,
+     contrasts = list(day = contr.sum,
+                      season = MASS::contr.sdif),
+     data = .) %>%
+  tidy()
+```
+
+What can we say about statistically significant effects of day and season on bike riding? Compared to summer, how many bike riders do you expect to see on a Wednesday in fall?
+
+As usual, it helps to be able to visualize data in a plot. Try recreating this on your own, and peek at my code if you need help.
+
+```{r class.source = 'fold-hide'}
+pioneer_riders %>%
+  mutate(day = fct_relevel(day,
+                           "Monday", "Tuesday", "Wednesday", "Thursday",
+                           "Friday", "Saturday", "Sunday")) %>%
+  group_by(day, season) %>%
+  summarise(riders = mean(riders), .groups = "drop") %>%
+  ggplot(aes(x=day, y=riders, fill=day)) +
+  facet_grid(cols = vars(season)) +
+  geom_bar(stat = "identity", position = position_dodge(), show.legend = FALSE) +
+  scale_x_discrete(guide = guide_axis(n.dodge = 2))
+```
+
+# Exercises
+
+In our exercises, we'll be working with a dataset originally reported in the Washington Post. They used data from the National Center for Education Statistics to quantify the proportion of grade-school students from various racial backgrounds. We'll be combining that dataset with information about each state's regional classification to see whether there are different patterns of diversity in different regions.
+
+Here's the code to get the data tidied up. Just this once, you have permission to copy/paste it, but you should check to make sure that you have at least a conceptual understanding of what each pipe is doing.
+
+```{r}
+us_regions <- tibble(state_name = state.name,
+                     state_abb = state.abb,
+                     state_region = state.region)
+
+school <- here("Data", "school_diversity.csv") %>%
+  read_csv() %>%
+  clean_names() %>%
+  rename(school_id = leaid,
+         district_id = lea_name,
+         state = st,
+         district_type = d_locale_txt,
+         native = aian,
+         total_students = total) %>%
+  select(school_id:total_students) %>%
+  left_join(us_regions, by = c("state"="state_abb")) %>%
+  separate(district_type, into = c("urbanicity", "district_size")) %>%
+  filter(school_year == "2016-2017") %>%
+  mutate(urbanicity = fct_relevel(urbanicity, "rural", "town", "suburban"))
+```
+
+Let's take a look at what the dataset looks like. The variables `native` through `multi` refer to different racial groups, and encode the proportion of students (in each county) who belong to each group.
+
+```{r}
+glimpse(school)
+```
+
+Based on large-scale human migration trends in U.S. history, let's generate some hypotheses to test.
+
+1. For a disgracefully long period in U.S. history, Black Americans were forced into slavery, which was concentrated in the South. During the period of the "Great Migration", many Black people moved out of the South into the Northeast and (some) of the North Central states. Though some went West, there were fewer who were able to make such a long journey. Therefore, it is reasonable to expect that there might be a smaller proportion of Black children enrolled in public schools in the West, compared to the other three regions.
+2. Much of the Asian immigration into the U.S. coincided with expansion into the West. Therefore, we would expect to see greater enrollment of Asian children in the West, compared to other regions.
+3. For most of the racial groups defined in this dataset, we might expect that as urbanicity increases (rural, town, suburban, urban), so will the proportion of students enrolled in school. Therefore, in the two above analyses, it will be important to account for urbanicity in the analysis when examining the effect of region.
+4. There are two racial groups that buck this trend: whites and Native Americans (defined as American Indian and Alaskan Native in this dataset). This country has shamefully stolen the land of Native Americans, and sovereign Native governments exist primarily in rural areas. We can try testing whether we can observe this pattern in the data. Again, it is a good idea to account for potential regional differences in the analysis as well.
+5. Any others? Try crowdsourcing hypotheses from friends.
+
+As usual, it's a good idea to try plotting the data. As you've probably experienced while working through these tutorials, it's helpful to reference a plot when making sense of regression results. Here's a plot I made. Try recreating it on your own. (Hints: Try putting `urbanicity` on the x-axis and `proportion` on the y-axis, as you normally would. Then, see what `coord_flip` can do for you. Can't get the labels to show up in the right order? Check out the documentation for `fct_rev`.)
+
+```{r echo=FALSE}
+school %>%
+  pivot_longer(cols = native:multi,
+               names_to = "race",
+               values_to = "proportion") %>%
+  group_by(urbanicity, state_region, race) %>%
+  summarise(proportion = mean(proportion), .groups = "drop") %>%
+  drop_na() %>%
+  mutate(urbanicity = fct_rev(urbanicity)) %>%
+  ggplot(aes(x=urbanicity, y=proportion)) +
+  facet_grid(rows = vars(race), cols = vars(state_region)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  coord_flip()
+```
+
+Now, it's time to move onto the formal analysis. When addressing each of our research questions, think about different contrasts and what they can tell us. We've covered difference, Helmert, successive difference, and deviation contrasts. You might also find it interesting to look into polynomial contrasts. Is there a single best contrast for each research question? Not necessarily. Whatever choices you make, you should be prepared to defend your reasoning and justify your choices.
+
+For each of the research questions, what do you conclude? Make sure to interpret your regression models' estimates and p-values when justifying your conclusions.
+
