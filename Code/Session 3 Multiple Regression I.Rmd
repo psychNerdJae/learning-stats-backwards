@@ -75,6 +75,7 @@ glance(lm_bd)
 
 In our rainfall example, we know that our grandparent's pain rating is somewhat predictive of rain. But we also know that it's a very "noisy" measure. Although our grandparent is okay at predicting rain on average, there are plenty of times where they aren't very accurate at all. Of all the variance in rainfall, perhaps our grandparent's pain rating only accounts for 10% of it. This is an intuitive example of a predictor that is statistically significant, but doesn't account for much of the variance in the outcome variable. We can quantify this using $R^2$: of all the variance in the outcome variable, what percent of it is accounted for by our predictors? We can see that bill depth accounts for 22% of the variance in body mass. This isn't terrible, but there's a lot of room for improvement. 
 
+
 # Review
 
 Now, try predicting body mass using flipper length. Save the estimated model in a variable called `lm_fl`, then take a look at the results. If you need a hint, take a look at my code.
