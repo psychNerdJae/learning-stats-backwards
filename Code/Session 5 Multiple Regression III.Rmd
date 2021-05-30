@@ -1,0 +1,289 @@
+---
+title: "Session 5: Multiple regression III: interactions"
+author: "Jae-Young Son"
+output:
+  html_document:
+    code_folding: show
+    toc: TRUE
+    toc_float: TRUE
+---
+
+This document was most recently knit on `r Sys.Date()`.
+
+# Setup
+
+Let's load the usual libraries.
+
+```{r message=FALSE}
+library(tidyverse)
+library(broom)
+library(knitr)
+library(here)
+library(palmerpenguins)
+library(lubridate)
+library(janitor)
+```
+
+# Review
+
+Let's recap what we've learned. We know that we want to predict variability in an outcome variable, and that we can use continuous and categorical variables to do this. We have gained experience working with multiple predictors, and have practiced working with multiple regression models where the predictors are all continuous or all categorical. In today's session, we'll work through the logic of ***interactions*** and also get some practice working with models that mix continuous and categorical predictors.
+
+So far, we have only worked with ***additive*** models. What does that mean? Consider the kinds of equations we've encountered so far:
+
+$Outcome = \beta_0 + \beta_1 Variable1 + \beta_2 Variable2 + ...$
+
+Every predictor (variable) stands on its own, and is simply added to all other predictors... hence, the model is additive. To verbalize what an additive model is doing, we might say, "Change (variability) in rainfall *depends on* atmospheric pressure and temperature."
+
+But this is not the only kind of model we could have. We might alternatively say, "Yes, change in rainfall depends on atmospheric pressure and temperature, but that's not the full story. The effect of atmospheric pressure on rainfall critically *depends on* temperature." This kind of statement signals a belief in an ***interactive*** model.
+
+To introduce additive models, I'd previously said that each predictor is a hypothesis test: change depends on quantities, and change depends on categories. By analogy, an interactive model tests the hypothesis that change depends on change.
+
+If you feel like I'm talking in riddles, it's okay to feel confused. Interactions are tricky to learn, and even trickier to teach. We're going to walk through many different perspectives for understanding interactions, and if you only understand one, then that's good enough for now.
+
+# Change depends on change
+
+## Verbal description
+
+One of the most common uses of "interaction" is in the context of drug interactions. Let's say that you've got a giant headache, and you're trying to relieve yourself of the pain. You could try taking Advil, and that would reduce your pain somewhat. You could alternatively try drinking wine, and that would also reduce your pain somewhat.
+
+An additive model would predict that if you take an Advil and then drink wine, you'd experience a lot of pain relief. But, we know from reading the safety warnings that Advil and alcohol don't mix. If you took both, you could experience catastrophic liver failure, and likely your pain would skyrocket. This is the essence of an interactive model: the effect of Advil *depends on* how much wine you've had. Change depends on change.
+
+## Mathematical description
+
+That explanation doesn't work for you? Consider that an interactive model is sometimes called a multiplicative model. This comes from how the equation is written:
+
+$Outcome = \beta_0 + \beta_1 Variable1 + \beta_2 Variable2 + \beta_3 (Variable1 \times Variable2) + ...$
+
+The effects of the two predictors are no longer assumed to be "independent" of each other. By multiplying them together (and then with a third $\beta$ weight), you have specified that there is a dependency, such that the effect of one variable depends on the value of the other variable. Change depends on change.
+
+## Visual description
+
+Maybe you find this explanation confusing too. That's okay. Let's try visualizing an example using the Palmer Penguins. In this dataset, the bill length (approximately) ranges from 30-60mm, and the bill depth (approximately) ranges from 13-22mm. I'll first fit an *additive* regression model to estimate the $\beta$ weights on these variables, then visualize the regression model's predictions.
+
+```{r}
+lm_bl_bd_add <- penguins %>%
+  lm(body_mass_g ~ bill_length_mm + bill_depth_mm,
+     data = .)
+
+expand_grid(
+  bill_length_mm = seq(30, 60, 1),
+  bill_depth_mm = seq(13, 22, 1)
+) %>%
+  mutate(predicted_body_mass_g = predict(lm_bl_bd_add, newdata = .)) %>%
+  ggplot(aes(x=bill_length_mm,
+             y=predicted_body_mass_g,
+             color=bill_depth_mm,
+             group=bill_depth_mm)) +
+  geom_point() +
+  geom_line()
+```
+
+What do we note about the additive model? There is an effect of bill length, as we see body mass increasing along the x-axis. There is also an effect of bill depth: controlling for the effect of bill length, having a deeper bill is associated with having a higher body mass. These two effects are always added to each other, and we can see that all of the predicted lines are parallel to each other (i.e., have the same slope). This is not unique to these predictors, or to this dataset. If you have any additive combination of predictors, the regression will always form parallel lines when you visualize the model predictions.
+
+How is this different from models that contain interaction terms? Let's find out.
+
+```{r}
+lm_bl_bd_int <- penguins %>%
+  lm(body_mass_g ~ bill_length_mm * bill_depth_mm,
+     data = .)
+
+expand_grid(
+  bill_length_mm = seq(30, 60, 1),
+  bill_depth_mm = seq(13, 22, 1)
+) %>%
+  mutate(predicted_body_mass_g = predict(lm_bl_bd_int, newdata = .)) %>%
+  ggplot(aes(x=bill_length_mm,
+             y=predicted_body_mass_g,
+             color=bill_depth_mm,
+             group=bill_depth_mm)) +
+  geom_point() +
+  geom_line()
+```
+
+We can see that this model tells a completely different story. The effect of bill length on body mass *depends on* bill depth, such that having a deep bill predicts having a higher body mass for short-billed penguins, but predicts having a lower body mass for long-billed penguins. Change depends on change.
+
+This is an example of the most dramatic kind of interaction effect, known as a ***crossover interaction*** (so named because the lines cross over each other). But, if you have any kind of hypothesis that the lines are non-parallel (i.e., that the slopes will be different), you're positing an interaction effect.
+
+## Recap
+
+What's common across these examples? You'll note that I insist on italicizing the phrase "*depends on*." That's because all interaction models hypothesize that the effect of one predictor (on the outcome variable) *depends on* the value of another predictor. That is what I mean when I say that "change depends on change." To express this kind of hypothesis, you can say it verbally, write out the mathematical equation, or draw a visualization. All of these perspectives are equivalent, and as you gain familiarity working with interaction models, you'll grow comfortable translating your insights from one modality to another.
+
+# Interpreting interactions
+
+## Categorical-by-continuous
+
+The easiest way to start interpreting interactions is to interpret categorical-by-continuous interactions, because it's easiest to visualize different (continuous) slopes for different (categorical) groups. Once we have a chance to build your intuitions, we'll return to categorical-by-categorical and continuous-by-continuous interactions.
+
+We might have a hypothesis that the effect of bill length on body mass depends on the species. That is, a one-millimeter increase in bill length is associated with a different body mass increase in different species. To get a visual sense for this hypothesis, let's plot the data along with the line of best fit.
+
+```{r}
+penguins %>%
+  ggplot(aes(x=bill_length_mm, y=body_mass_g, color=species)) +
+  geom_point() +
+  geom_smooth(method = "lm")
+```
+
+Eyeballing this plot suggests that the relationship between bill length and body mass is about the same for Adelie and Gentoo penguins, but different between Adelie and Chinstrap penguins. That is, the slope of the Chinstrap line looks less steep than the slope of the Adelie line. Let's try testing this hypothesis formally.
+
+A technical note: in Wilkinson notation, the asterisk `*` specifies that we want to estimate the "main effect" of the two adjacent variables, along with their interaction. So `Var1*Var2` would estimate an effect for `Var1`, another for `Var2`, and a third for the interaction between them. If we wanted to, we could instead write it out like this: `Var1 + Var2 + Var1:Var2`. That does the exact same thing, and is sometimes handy when we want to be very precise about what parameters we are / are not estimating.
+
+```{r}
+penguins %>%
+  lm(body_mass_g ~ bill_length_mm * species,
+     data = .) %>%
+  tidy() %>%
+  kable()
+```
+
+Recall that by default, R uses a difference contrast for categorical variables. Adelie penguins become our reference category, and so the intercept reflects the estimated body mass of an Adelie penguin with a zero-millimeter bill length. What prediction does this model make for an Adelie penguin that has a 40-mm bill length?
+
+Things get a little more interesting once we start thinking about other species. Recall that a difference contrast creates dummy variables, such that the variable `speciesChinstrap` equals one when the penguin in question is a Chinstrap, and zero otherwise. You can think of a dummy variable like a lightswitch: you can flip it off and on, and those are the only two settings.
+
+When we're interested in making predictions about Adelie penguins, $SpeciesChinstrap = 0$ and $SpeciesGentoo = 0$. Why is that important? Think about the mathematical equation for this model:
+
+$BodyMass = \beta_0 + \beta_1 BillLength + \beta_2 SpeciesChinstrap + \beta_3 SpeciesGentoo + \beta_4 (BillLength \times SpeciesChinstrap) + \beta_5 (BillLength \times SpeciesGentoo)$
+
+If the dummy variables for Chinstrap and Gentoo penguins equal zero, then the interaction terms are automatically set to zero, as well as the main effects of species. In effect, that simplifies the model down to $BodyMass = \beta_0 + \beta_1 BillLength$.
+
+What if we're interested in comparing Chinstrap penguins to the reference category? Then, we have to turn on the lightswitch for Chinstraps. Now, we have more non-zero terms in our model: $BodyMass = \beta_0 + \beta_1 BillLength + \beta_2 SpeciesChinstrap + \beta_4 (BillLength \times SpeciesChinstrap)$.
+
+So, what prediction does the model make about a Chinstrap penguin with a 40-mm bill? As always, we start with the intercept, $\beta_0 = 35$. Then, we calculate the model's prediction about bill length: $\beta_1 = 94$, and so $\beta_1 \times 40 = 3,760$. We add that to the intercept to get $3,795$. At this stage, what do you notice about this prediction, compared to the prediction you made about an Adelie penguin with a 40-mm long bill? Now, we must add in the Chinstrap dummy variable: $\beta_2 = 811$, and $3,795 + 811 = 4,606$.
+
+But we're not yet done, because we still have to take the interaction into account. We note that $\beta_4 = -35$. What do we do with this estimate? We must multiply it against $BillLength \times SpeciesChinstrap$. This is pretty easy to do because the dummy variable equals one. So, $BillLength \times SpeciesChinstrap = 40 \times 1 = 40$. This means that $\beta_4 (BillLength \times SpeciesChinstrap) = -35 (40) = -1,400$. We add this to the rest of the equation, and we get a prediction of $4,606 - 1,400 = 3,206$ grams (with some amount of rounding error).
+
+Phew! This may have been a lot for you to take in, so don't feel bad if you have to re-read this a few times. Once you feel like you have a handle on it, try testing yourself. What are the non-zero terms in the model, if we're interested in comparing Gentoo penguins to Adelie penguins? If we're interested in predicting the body mass of a Gentoo penguin with a 50-mm long bill, what does our regression model tell us?
+
+## Categorical-by-categorical
+
+Let's test a different hypothesis. We might believe that the effect of sex on body mass is different for different species. To get an intuitive sense for this, let's plot the data. The vertical bars reflect means, and each datapoint is one penguin.
+
+Remember how we previously compared the slopes of lines between different groups? We can do more-or-less the same thing here. In your mind, draw a line between the means of female and male Adelie penguins. Note how steep that slope is. Now, do the same for female and male Chinstrap penguins. How does the slope of the Chinstrap line compare to the slope of the Adelie line?
+
+```{r}
+penguins %>%
+  select(body_mass_g, species, sex) %>%
+  drop_na() %>%
+  ggplot(aes(x=species, y=body_mass_g, color=sex)) +
+  geom_point(alpha = 0.5,
+             position = position_jitterdodge(jitter.width = 0.2,
+                                             dodge.width = 0.5)) +
+  stat_summary(geom = "crossbar", fun = mean,
+               width = 0.75, position = position_dodge(width = 0.5))
+```
+
+Compared to the difference between female/male Adelie penguins, the sex difference for Chinstrap penguins looks smaller. To my eyes at least, the sex difference between Adelie and Gentoo penguins looks about the same. So, we posit that there is a significant species-by-sex interaction, such that the body mass difference between female and male Chinstrap penguins is smaller than the body mass difference between female and male Adelie penguins. (Whew, that's a mouthful.)
+
+Let's take a look!
+
+```{r}
+penguins %>%
+  lm(body_mass_g ~ sex * species,
+     data = .) %>%
+  tidy() %>%
+  kable()
+```
+
+The intercept estimate ($\beta_0$) reflects the average body mass of a female Adelie, $3,369$g. What prediction can we make about a male Adelie's body mass? That requires us to flip on the male lightswitch, so we add the estimate for `sexmale` to the intercept: $3,369 + 675 = 4,044$g.
+
+Okay, how about a female Chinstrap? Now, the Chinstrap lightswitch is on, so our prediction is $3,369 + 158 = 4,527$g.
+
+Let's get really crazy: what prediction do we make about a male Chinstrap? We turn on the male lightswitch and get $4,044$g as before. We also need to turn on the Chinstrap lightswitch, so we add $4,044 + 158 = 4,202$g. We're not yet done, because now that both lightswitches are on, the term `sexmale:speciesChinstrap` becomes relevant too. So we need add this to the total to get our final prediction of $4,202 - 263 = 3,939$g.
+
+Now you try: what predictions do you make about a female Gentoo? How about a male Gentoo?
+
+Bonus: A friend wants to know the "main effect" of sex on penguin body mass, and wants to find that estimate in your regression table. What do you tell them?
+
+## Continuous-by-continuous
+
+When we were working with interactions with at least one categorical variable, it was relatively easy to verbalize our hypotheses: "Longer bill lengths are associated with greater body mass, but this effect is less strong for Chinstrap penguins compared to Adelie penguins." Or, "Male penguins have greater body mass than female penguins, but this effect is less strong for Chinstrap penguins than for Adelie penguins."
+
+The conceptual difficulty with continuous-by-continuous interactions is that we can't appeal to groups anymore. To get around this, we can use some verbal tricks to imply groupings. For example: "For penguins with deep bills, bill length has no association with body mass. In contrast, for penguins with shallow bills, longer bill length is associated with greater body mass." Does our data contain a group of penguins with deep versus shallow bills? Not actually, and that's not how the analysis is actually done. But, it's helpful to verbally express hypotheses in this way, because it's easier for us to think about there being differences between groups.
+
+We face the same difficulty when trying to visualize raw data. It was easy enough to plot categorical-by-continuous and categorical-by-categorical data, and to show that the averages look different between groups. It's harder when we want to intuitively visualize continuous-by-continuous interactions. In the example below, we can see that the predicted line of best fit doesn't say anything interesting about our hypothesis...
+
+```{r}
+penguins %>%
+  ggplot(aes(x=bill_length_mm, y=body_mass_g, color=bill_depth_mm)) +
+  geom_point() +
+  scale_colour_viridis_b(option = "plasma", end = 0.8) +
+  geom_smooth(method = "lm")
+```
+
+For visualization purposes, we can use some of the same tricks that we used to verbalize the hypothesis. First, we bin bill depth so that we create two "groups" of penguins with relatively shallow versus deep bills. Then, we can see the effect of bill length on these two groups.
+
+```{r}
+penguins %>%
+  mutate(bill_depth_groups = cut_number(bill_depth_mm, n=2)) %>%
+  ggplot(aes(x=bill_length_mm, y=body_mass_g, color=bill_depth_groups)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE)
+```
+
+Of course, the visualized lines of best fit can be misleading, because they don't reflect how the regression model is making predictions. We made an arbitrary choice to artificially categorize bill depth into two groups, but we could have just as arbitrarily chosen five groups...
+
+```{r}
+penguins %>%
+  mutate(bill_depth_groups = cut_number(bill_depth_mm, n=5)) %>%
+  ggplot(aes(x=bill_length_mm, y=body_mass_g, color=bill_depth_groups)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE)
+```
+
+So when visualizing continuous-by-continuous interactions with raw data, there's an art to creating a visualization that accurately portrays the data, versus creating a visualization that allows people to intuitively understand what hypotheses you're testing. And, anytime your visualization portrays something that isn't reflected in your analysis (in this case, adding lines of best fit for groups that don't actually exist in the dataset), it's good to make an explicit note of that when displaying it (e.g., in a figure caption).
+
+Now, with all of this said, let's look at an actual analysis.
+
+```{r}
+penguins %>%
+  lm(body_mass_g ~ bill_length_mm * bill_depth_mm,
+     data = .) %>%
+  tidy() %>%
+  kable()
+```
+
+To begin, write down the mathematical equation for this model. If you need help, scroll up to the section "Mathematical description".
+
+What's our prediction for a penguin with a bill length of $40$mm and a bill depth of $15$mm? If this were an additive model, we'd just add up $\beta_0 = -25,583$, $715 \times 40$, and $1,485 \times 15$, which equals $25,292$g. But, we now have an interaction term to take into account as well, which sums to $-36 \times 40 \times 15 = -21,600$. So our final prediction is $25,292 - 21,600 = 3,692$g (with lots of rounding error). If the computation of the interaction term seems mysterious to you, look at how you wrote down the mathematical equation.
+
+How does this prediction change when you want to crunch the numbers for a penguin with a bill that's $40$mm long and $16$mm deep?
+
+# Exercises
+
+## Bike riding
+
+Let's load in the Pioneer Valley bike riding dataset again.
+
+```{r eval=FALSE}
+pioneer_riders <- here("Data", "pioneer_riders.csv") %>%
+  read_csv() %>%
+  mutate(season = case_when(
+    date %within% interval(ymd("2005-03-20"), ymd("2005-06-19")) ~ "Spring",
+    date %within% interval(ymd("2005-06-20"), ymd("2005-09-21")) ~ "Summer",
+    date %within% interval(ymd("2005-09-22"), ymd("2005-12-20")) ~ "Fall"
+  )) %>%
+  select(riders, season, day, hi, lo, precip, clouds, weekday)
+```
+
+Let's say we're interested in knowing how bike riding (`riders`) is affected by season and temperature. Our hypothesis is that in the Spring, there are more bikers on warmer days (`hi`). Compared to Spring, the effect of warmth on bike ridership is less strong in the Summer and Fall.
+
+First, plot the data corresponding to this hypothesis, and draw the lines of best fit. What does this visual analysis suggest to you? Then, perform the regression analysis. Is our hypothesis supported? What evidence leads you to conclude this?
+
+## Willingness to self-isolate
+
+Now let's load in the dataset about people's willingness to self-isolate in the early days of covid-19. We haven't yet learned all of the techniques necessary to fully reproduce the main analysis reported in the paper, but we now know enough to examine a *subset* of the full dataset (which, spoiler alert, is why we will find something slightly different from what the authors found in the published paper).
+
+```{r eval=FALSE}
+covid <- here("Data", "covid_intervention.csv") %>%
+  read_csv() %>%
+  mutate(keep = if_else(sub %% 2 == 0, "threat", "prosocial")) %>%
+  filter(keep == intervention) %>%
+  select(-keep) %>%
+  mutate(intervention = fct_relevel(intervention, "threat"))
+```
+
+We think that a person's willingness to self-isolate depends on what intervention they received (threatening or prosocial), but that the effect of the intervention also depends on the emotions elicited by the intervention (valence and arousal). Specifically, we think that feeling more positive (higher valence) increases willingness to self-isolate for the prosocial intervention, but not the threat intervention. We also think that feeling more "activated" (higher arousal) increases willingness to self-isolate for the prosocial (but not the threat) intervention.
+
+As usual, plot the data corresponding to these hypotheses, and draw the lines of best fit. What does this visual analysis suggest about what you might find in the statistical analysis? Then perform the regression analyses. Which hypotheses are supported, and what results lead you to conclude this?
+
+Bonus: You could investigate this using two separate regressions, one testing the interaction between valence and intervention, and another testing the interaction between arousal and intervention. This is what the authors did in the published paper. Alternatively, you could investigate this using a single regression model, which includes both interactions (but *not* the three-way interaction between valence, arousal, and intervention). How are these analyses similar? How are they different? What's your personal preference between these two approaches, and why?
+
