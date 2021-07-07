@@ -12,3 +12,13 @@ https://github.com/WPMedia/student_integration_analysis
 
 State classifications into regions and divisions from the US Census
 Adapted from: https://www2.census.gov/geo/pdfs/maps-data/maps/reference/us_regdiv.pdf
+
+Birthweights
+Originally from the Child Health and Development Studies conducted at the Oakland, CA, Kaiser Foundation Hospital
+https://math.montana.edu/shancock/courses/stat401/labs/lab1.html
+
+Galton's heights
+https://ytliu0.github.io/Stat390EF-R-Independent-Study-archive/RMarkdownExercises/Galton_solution.html
+
+NHANES blood pressure 2017-2020 (pre-pandemic)
+https://wwwn.cdc.gov/nchs/nhanes/search/datapage.aspx?Component=Examination&Cycle=2017-2020

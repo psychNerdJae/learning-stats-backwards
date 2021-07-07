@@ -1,0 +1,432 @@
+---
+title: "Session 6: Parametric models"
+author: "Jae-Young Son"
+output:
+  html_document:
+    code_folding: show
+    toc: TRUE
+    toc_float: TRUE
+---
+
+This document was most recently knit on `r Sys.Date()`.
+
+# Setup
+
+Let's load the usual libraries.
+
+```{r message=FALSE}
+library(tidyverse)
+library(broom)
+library(knitr)
+library(here)
+library(palmerpenguins)
+library(lubridate)
+library(janitor)
+```
+
+## Taking inventory
+
+The strategy of learning statistics backwards means that we've glossed over a lot of fundamental ideas. On the plus side, you've gotten really good at being able to interpret and communicate the results of linear regression models, which is not a trivial thing to learn and practice. On the other hand, we've completely ignored most of the basic concepts underlying linear regression, which you probably would have learned in the first few weeks of a "real" stats class. So, that puts you in a really dangerous position, intellectually. You know just enough to do things, but you don't know enough to know whether you're doing things badly.
+
+You might ask me, grumpily, "Well, if that's the case, why haven't we covered the basics yet?" Frankly, if you're like me, you'd have gotten bored. It's hard to appreciate the importance of basic ideas until you understand how they can be applied to more interesting analyses. But now that we understand linear regression a little better, we're ready to understand some of the foundational ideas underlying regression, which will help us understand why linear models make certain kinds of assumptions.
+
+As we begin learning about generalized linear models (GLMs), you'll need to understand what I mean when I talk about data being modeled by a theoretical ***distribution***, and what it means to have an ***expectation*** for each family of models. Once you understand these ideas, you'll understand what I mean when I say that we're working with ***parametric models*** and why our entire approach to data analysis centers around proper ***estimation*** of model ***parameters***.
+
+If this all sounds like gibberish, don't worry... by the time we finish today's session, we should have a better intuition for what all these terms mean.
+
+# What is an expectation?
+
+## Gambling
+
+Let's say we're playing a very simple slot machine. If you win, the slot machine will pay out twice what you gambled. The probability of winning is 50%. If you gamble a single dollar, what ought to be your expectation about what you'll be paid?
+
+Well, one possibility is that you'll lose, and you'll receive nothing. We weight this outcome by how probable it is, resulting in $\$0 \times 0.5 = \$0$.
+
+Another possibility is that you'll win, and you'll receive $\$1 \times 2 = \$2$. Again, we weight this outcome by how probable it is, which is $\$2 \times 0.5 = \$1$.
+
+Given these two possible outcomes, weighted by their probability of occurring, we therefore have an *expected value* of $\$0 + \$1 = \$1$. Simple enough, mathematically. This is a verbal elaboration of the classic formula $Expected Value = Magnitude \times Probability$, for people who might be familiar with this idea already.
+
+But what does that actually mean? This is a total abstraction of the reality we are actually going to experience. We're never going to win $\$1$ from the slot machine, we're only ever going to win $\$0$ or $\$2$.
+
+Let's bring it out of the realm of abstraction and actually try simulating this experience. We'll use a custom function to do this. It's less compact than it strictly needs to be, but hopefully this helps you understand how it works.
+
+```{r}
+slot_machine <- function(n_trials, p_win, pay_if_win) {
+  wins <- rbinom(n = n_trials,
+                 size = 1,
+                 prob = p_win)
+  
+  payouts <- wins * pay_if_win
+  
+  return(payouts)
+}
+```
+
+Just to make sure that you're getting the same results as me when simulating, we'll set a consistent *seed* for the random number generator.
+
+```{r}
+set.seed(07062021)  # Date when this code was originally written
+```
+
+Now, let's try gambling on the most boring slot machine ever created. With $\$1000$ in hand, we'll try pulling the lever of the slot machine 1000 times.
+
+```{r}
+gambles <- slot_machine(n_trials = 1000,
+                        p_win = 0.5,
+                        pay_if_win = 2)
+```
+
+How'd we do? If we look at the first handful of gambles, we can see that we won $\$2$ half of the time, and $\$0$ the other half of the time.
+
+```{r}
+gambles %>%
+  head()
+```
+
+We can plot out the results of all our gambles:
+
+```{r}
+gambles %>%
+  enframe() %>%
+  ggplot(aes(x=value)) +
+  geom_histogram()
+```
+
+How much money did we make after 1000 gambles?
+
+```{r}
+gambles %>%
+  sum()
+```
+
+So we can see that we made approximately $\frac{\$1008}{1000} = \$1.01$ every time we gambled, which is pretty close to the expectation we'd calculated! But what if we'd stopped sooner? How much money did we make per trial, after X trials? We can try plotting this out. We can see there was a lot of volatility at first, which settled onto a stable number (not-so-coincidentally, the expected value). Why was there volatility at first? Why did it settle onto a stable number? And why did it settle onto the expected value?
+
+Bonus question: what does this simulation suggest about the relationship between sample sizes and accurately estimating unknown expectations?
+
+```{r}
+gambles %>%
+  enframe(name = "trial",
+          value = "payout") %>%
+  mutate(payout_per_trial = cumsum(payout) / trial) %>%
+  ggplot(aes(x=trial, y=payout_per_trial)) +
+  geom_hline(yintercept = 1, color = "red") +
+  geom_line()
+```
+
+Now, I want you to connect the dots for yourself, because this is really, really, really important for you to have a deep understanding of. What's the formula for calculating the mean/average? (If you think mathematically, write it down. If you think verbally, write down the algorithm in words.) How is that related to the plot we just made of our payout per trial? And so, what's the relationship between expectation and the arithmetic average?
+
+## Penguins
+
+In past sessions, I've asked you to interpret the results of linear regression models. One of the things that I've stressed (or, I hope I've stressed!) is that our regression betas reflect estimates of *averages*. If we estimate the following model with our penguin dataset, we can see that male penguins, *on average* have a body mass that is 683 grams greater than female penguins. So if we only know a penguin's sex, what expectation can we have about its body mass?
+
+```{r}
+penguins %>%
+  lm(body_mass_g ~ sex,
+     data = .) %>%
+  tidy() %>%
+  kable()
+```
+
+Seems like a simple-enough story, right? Well, let's try plotting out these data. Suddenly, the story seems much less simple. Yes, there are many male penguins that have greater body mass than female penguins, but then again, there are lots of female penguins that seem to have greater mass than many male penguins. What's more, this distribution doesn't look like a smooth Gaussian (i.e., a "normal" distribution or a "bell curve") with a single central peak, but actually seems to have multiple peaks.
+
+So based on this model, what expectation can we form about a penguin's body mass, if all we know is its sex? How useful is that expectation?
+
+```{r}
+penguins %>%
+  drop_na() %>%
+  ggplot(aes(x=body_mass_g, color=sex, fill=sex)) +
+  geom_histogram(position = "identity",
+                 alpha = 0.2)
+```
+
+"Well, hold on," you might say. That hardly seems fair! We can surely develop better expectations by providing the model with more information. For example, we might imagine that species is also really important. When we plot this out, that seems fair enough... we can see that there's now Gaussian-looking curves for each species, and that the peaks of the male curves seem to be greater than the peaks of the female curves.
+
+It's still true, of course, that there are some female penguins that have greater body mass than some male penguins. But, the expectation is that *on average*, male penguins will tend to have greater body mass than female penguins. And in this case, that expectation seems to be more useful than it was in our previous model.
+
+```{r}
+penguins %>%
+  drop_na() %>%
+  ggplot(aes(x=body_mass_g, color=sex, fill=sex)) +
+  facet_wrap(~species, ncol = 1) +
+  geom_histogram(position = "identity",
+                 alpha = 0.2)
+```
+
+And of course, we can test this formally as well:
+
+```{r}
+penguins %>%
+  lm(body_mass_g ~ sex * species,
+     data = .) %>%
+  tidy() %>%
+  kable()
+```
+
+# Distributional thinking
+
+What are we talking about when we refer to a ***distribution***? Think back to our gambling example. Every time we pulled on the slot machine lever, that produced one ***observation***. Every time we have a new observation, we can add that to the list containing all of the datapoints we've, well, observed. That list tells us something interesting about how observations are *distributed*. In our example, they were distributed so that about 50% of observations were at $\$0$, and the other 50% of observations were at $\$2$. So, how many peaks were there? This kind of distribution is known as a ***binomial*** distribution, because there are only two types of outcomes that produce two peaks. We'll return to this kind of distribution in the next session.
+
+How about in our penguin example? Every penguin is an observation, and when we consider all of the penguins as a collective, we have a sense for how body mass is distributed amongst penguins. Male penguins tend to have greater body mass than female penguins, on average, but that's not always true for individual penguins. Some female penguins have greater body mass than some male penguins. We can break this up even further, and examine how the distribution of penguins varies according to both sex and species. Again, we see that there's some variability, but on average, male penguins tend to have greater body mass than female penguins *within each species*. When we considered effects of both sex and species, we found some nice ***Gaussian*** distributions, which had a single peak in the "center" of the curve.
+
+So when we talk about distributions, we're thinking about the *shape* of data. Where do these shapes come from, and how do we use mathematical models to approximate them?
+
+## Distributional shapes
+
+Where does the shape of a distribution come from? This is a philosophically difficult question, so I'm going to give you a simple but flawed answer: the shapes of distributions come from nature.
+
+For example, consider how we see the same shape over and over again when we plot different kinds of biological measurements.
+
+Baby birthweights...
+
+```{r echo=FALSE}
+birthweights <- here("Data", "birthweight.csv") %>%
+  read_csv(col_types = cols()) %>%
+  rename(baby_weight = bwt,
+         firstborn = parity,
+         mom_age = age,
+         mom_height = height,
+         mom_weight = weight,
+         mom_smoke = smoke)
+
+birthweights %>%
+  ggplot(aes(x=baby_weight)) +
+  geom_histogram(bins = 10)
+```
+
+Children's heights...
+
+```{r echo=FALSE}
+child_heights <- here("Data", "galton_heights.txt") %>%
+  read_tsv(col_types = cols())
+
+child_heights %>%
+  ggplot(aes(x=Height, fill=Gender)) +
+  geom_histogram(bins = 10,
+                 position = "identity",
+                 alpha = 0.75)
+```
+
+Blood pressure and pulse...
+
+```{r echo=FALSE}
+blood_pressure <- here("Data", "nhanes_bp.XPT") %>%
+  haven::read_xpt() %>%
+  clean_names() %>%
+  rename(sub_id = seqn,
+         which_arm = bpaoarm,
+         cuff_size = bpaocsz,
+         systolic_1 = bpxosy1,
+         diastolic_1 = bpxodi1,
+         systolic_2 = bpxosy2,
+         diastolic_2 = bpxodi2,
+         systolic_3 = bpxosy3,
+         diastolic_3 = bpxodi3,
+         pulse_1 = bpxopls1,
+         pulse_2 = bpxopls2,
+         pulse_3 = bpxopls3) %>%
+  pivot_longer(systolic_1:pulse_3) %>%
+  separate(name, into = c("measure", NA)) %>%
+  group_by(sub_id, measure) %>%
+  summarise(value = mean(value, na.rm = TRUE),
+            .groups = "drop")
+
+blood_pressure %>%
+  drop_na() %>%
+  ggplot(aes(x=value)) +
+  facet_wrap(~measure, scales = "free") +
+  geom_histogram(bins = 10)
+```
+
+...and so on.
+
+## Modeling distributions
+
+For some reason, data from nature seem to produce this same distributional shape over and over again. Our goal is to somehow characterize this shape using a mathematical model. When modeling distributions, we have two goals, which are sometimes at odds with each other.
+
+First, we want our model to describe data accurately. That is, using the fewest numbers possible, we want to be able to describe data with minimal error. To illustrate, the histogram below was computed using 1,174 observations of babies' birth weights. The smooth curve uses the Gaussian distribution (more on this later) to approximate the data, and is able to provide a pretty good fit using only two numbers. Is this an "accurate" model? Well, it's not perfect, but it does a pretty good job given that we're only using two numbers!
+
+```{r echo=FALSE}
+birthweights %>%
+  ggplot(aes(x=baby_weight)) +
+  geom_histogram(aes(y = ..density..),
+                 bins = 10) +
+  stat_function(fun = dnorm,
+                args = list(mean = mean(birthweights$baby_weight),
+                            sd = sd(birthweights$baby_weight)),
+                size = 1)
+```
+
+Second, we also want our model to be flexible. That is, we want to be able to use the same model to describe as many phenomena as possible. Is it possible that the same model could describe baby birthweights, children's heights, ***and*** adult blood pressures? The answer, resoundingly, is yes. In fact, every time we've used a linear model in this series, we've secretly been using a Gaussian distribution to describe our data. How can this be possible?
+
+# Parametric models
+
+## Plato's cave
+
+If you've taken a Greek philosophy class, you might've heard of Plato's allegory of the cave. Here's the short version of the story: This old guy named Plato basically thinks there's a spirit world, which is distinct from the physical world we inhabit. We believe that we perceive things in the physical world, but actually we're just perceiving the shadows cast by the spirit world onto our physical world.
+
+Let's make this concrete. So let's say that we've spent our whole lives living inside a cave, so we have no idea what things might exist outside of the cave. There happens to be a tree growing at the entrance of this cave. We've never seen it, because we've never been outside of the cave. However, when the sun shines its light into the cave, we see the shadow of the tree. As cave-dwellers, we've learned to point at the shadow and recognize it as a "tree." But of course, it's not actually a tree. It's a tree shadow.
+
+Plato thought that most people live their lives stuck in the physical world, like the cave-dwellers. We see what we think is a tree, but we're actually seeing shadows of the singular perfect spirit tree. If we were able to venture into the spirit world, we would see things for how they "truly" are.
+
+To the modern scientist, this probably sounds bonkers. You might be asking, what the hell does any of this have to do with statistics?
+
+Surprisingly, many of our statistical traditions start with the philosophical assumption that when we observe data out in nature, we're only seeing shadows. In the spirit world, there exists a single perfect Gaussian distribution. When we collect data, we're only measuring its shadows in the physical world.
+
+Maybe this sounds insane to you. Let's put it differently to help you understand. Practically speaking, it is not possible for us to collect data about the birth weight of every single baby born in the U.S. Instead, we collect a sample. Using statistics like the sample average, we can get close-enough approximations of the true population average. What allows us to do this? Well, it's the belief that the true population average is well-described by a Gaussian distribution. If we assume that there's a true Gaussian distribution in the spirit world, we can learn how to use its shadows in the physical world to make inferences about entire populations from small samples.
+
+So, because this philosophy is the basis for all frequentist statistics (the most commonly-used family of statistical analysis), our job now is to peer into the spirit world and see how these distributions work.
+
+## "Parametric"
+
+The word "parametric" sounds fancy, but refers to a very simple concept.
+
+If you're listening to music, and you want that music to be louder or quieter, what do you do? You reach over to the volume knob and adjust it. In this example, volume is a parameter. It's a variable that you can manipulate to change the shape of the soundwaves coming through your speakers or headphones. Specifically, by adjusting the volume parameter, you've changed the amplitude of the soundwaves, making them smaller or bigger.
+
+Parameters do the same thing for statistical distributions. You can change the shape of a distribution by modifying its parameters. Therefore, when we refer to ***parametric models***, we're referring to models that change the shape of a given distribution using parameters.
+
+# The Gaussian distribution
+
+There are lots of distributions, and parametric models to accompany them. We'll consider them in the next session. Today, we'll only focus on one: the Gaussian distribution. This distribution goes by many names: the "normal" distribution, the bell-curve distribution, and the Gaussian distribution. For no defensible reason, I prefer to call it the Gaussian distribution.
+
+This distribution has two parameters:
+
+1.  The mean $\mu$ (the Greek letter "mu", which is equivalent to the Roman letter "m")
+2.  The standard deviation $\sigma$ (the Greek letter "sigma", which is equivalent to the Roman letter "s")
+
+By changing these parameters, we can obtain a family of Gaussian distributions that all look slightly different, but that all look like bell curves.
+
+## Simulations
+
+Let's try plotting a bunch of simulated data pulled from Gaussian distributions, and play around with the parameters. We'll first create a function to make this easy...
+
+```{r}
+return_gaussian <- function(mu, sigma, n_samples=1000) {
+  rnorm(n = n_samples,
+      mean = mu,
+      sd = sigma) %>%
+  enframe(name = NULL) %>%
+  mutate(parameters = str_c("Mu=", mu, ", Sigma=", sigma))
+}
+```
+
+And now we can try keeping the sigma parameter constant, while we change the mu parameter. What do we notice about the shape of these distributions?
+
+```{r}
+bind_rows(
+  return_gaussian(mu = 0, sigma = 1),
+  return_gaussian(mu = 5, sigma = 1),
+  return_gaussian(mu = -5, sigma = 1)
+) %>%
+  ggplot(aes(x=value, fill=parameters)) +
+  geom_histogram(position = "identity",
+                 alpha = 0.5,
+                 bins = 30)
+```
+
+Now, let's try keeping the mu parameter constant, while we change the sigma parameter. What do we notice about the shape of these distributions?
+
+```{r}
+bind_rows(
+  return_gaussian(mu = 0, sigma = 1),
+  return_gaussian(mu = 0, sigma = 10),
+  return_gaussian(mu = 0, sigma = 30)
+) %>%
+  ggplot(aes(x=value, fill=parameters)) +
+  geom_histogram(position = "identity",
+                 alpha = 0.5,
+                 bins = 30)
+```
+
+## Parametric penguins
+
+Armed with this knowledge, let's return to our penguins. The simplest kind of linear regression we can run is an intercept-only model.
+
+```{r}
+penguins %>%
+  drop_na() %>%
+  lm(body_mass_g ~ 1,
+     data = .) %>%
+  tidy() %>%
+  kable()
+```
+
+What do these numbers mean? Well, let's just try calculating the sample mean and standard deviation and see whether they're the same or different. Note that the regression table outputs ***standard error***, which is related to standard deviation using the following formula: $SE = \frac{SampleSD}{\sqrt{n}}$, where $n$ is the number of observations in the sample.
+
+```{r}
+penguins %>%
+  drop_na() %>%
+  summarise(Mean = mean(body_mass_g, na.rm = TRUE),
+            SD = sd(body_mass_g, na.rm = TRUE),
+            N = n(),
+            SE = SD / sqrt(N)) %>%
+  kable()
+```
+
+We can see that an intercept-only regression is simply finding the sample statistics for the population-level parameters that characterize a Gaussian distribution.
+
+In other words, we believe that there's one true Gaussian distribution in the spirit world. This Gaussian distribution can be described using two parameters, the mean and standard deviation. We have some data from the physical world, which is a shadow of the true distribution floating up in the spirit world. We'd like to be able to estimate some statistics (the sample mean and sample standard deviation) that allow us to guess what the spirit world distribution looks like. And that's what linear models allow us to do.
+
+## Testing statistical significance
+
+Hopefully, your brain doesn't hurt too badly yet, because we're going to connect these philosophical ideas with other philosophical ideas we've considered in past sessions. This would be a good stopping point if you're feeling tired!
+
+Do you remember our discussion of nihilism and the null hypothesis? In short, we want to know how likely it would have been to observe a particular effect in our data, if the null hypothesis were actually true. If this sounds unfamiliar to you, try refreshing your memory by reading the notes for Session 2.
+
+In an intercept-only model, the beta estimate reflects the sample mean. We want to know, if the null hypothesis were true (i.e., that the true mean is $0$), how likely would it be to have observed a mean of $4207$ in our sample? In the past, we've been satisfied with saying that the p-value tells us this probability. In our intercept-only model, we can see that there is a near-zero probability that the true mean is actually $0$, so we reject the null hypothesis. But how did we get that? Where did this come from?
+
+Let's first take a look at some equations, and then we'll break down what they mean.
+
+You'll note that in every regression table we've looked at, there's been a column for "statistic." This refers to the value of the ***t-statistic***. This statistic is computed using the formula $t = \frac{SampleMean - TheoreticalMean}{SampleSD/\sqrt{n}}$. When testing against the null hypothesis, the numerator is always $SampleMean - 0$. (Pop quiz: why?) You might recognize the denominator from above, because this is the definition of standard error.
+
+So we can simplify the computation of the t-statistic to something very simple: $t = \frac{SampleMean}{SampleSE}$. In the intercept-only model, we can see that $t = \frac{4207}{44} = 95$. Okay, so now we know where $t$ comes from. But what does that value mean?
+
+In our gambling example from the very start of this session, do you remember how our estimate of the per-trial payout changed as we collected more samples? Here's the plot to help jog your memory. Remember, the true expected value was $1$, indicated by the red line. When we only had a small number of observations, we got some pretty wild estimates. In a sense, this is because having a small amount of data means that our estimate is easily biased by sampling noise or sampling error. Below, I'll note that we obtained a surprisingly bad estimate even after 100 gambles!
+
+```{r echo=FALSE}
+gambles %>%
+  enframe(name = "trial",
+          value = "payout") %>%
+  mutate(payout_per_trial = cumsum(payout) / trial) %>%
+  ggplot(aes(x=trial, y=payout_per_trial)) +
+  geom_hline(yintercept = 1, color = "red") +
+  geom_line()
+```
+
+This is a problem, because it means that our estimates are probably pretty unreliable when the sample sizes are low. In some cases, we might even reject the null hypothesis when it's actually true! So we need some way of safeguarding against that. This is where the standard error comes in. Recall that $SE = \frac{SampleSD}{\sqrt{n}}$. If the sample standard deviation remained constant while the sample size increased, what would happen? (Hint: if you're having a hard time answering this, use $SD = 1$ and compare the value of $SE$ when $n = 10$ versus $n = 100$).
+
+So let's say we have some dataset with $n = 10$ observations in it. We find that $SampleMean = 0.5$, $SampleSD = 1$. Therefore, $t = \frac{0.5}{1 / \sqrt{10}} = 1.58$. We replicate this study with a much larger sample size of $n = 100$, and miraculously, the sample mean and SD are exactly the same. Therefore, $t = \frac{0.5}{1 / \sqrt{100}} = 5$. Again, the only thing that's different between the two datasets is their sample size, and yet that is sufficient to change the value of $t$.
+
+Wait a minute. Does that sound familiar? That sounds like a parameter. That sounds like turning a knob to change the volume of your music. By changing a single variable (the sample size), we get changes in the value of $t$. And that's exactly it. The t-statistic belongs to the t-distribution, which is one of the magic distributions that comes to us from the spirit world. It only has one parameter: the degrees of freedom, which is dictated by the sample size $n$.
+
+So if we have a t-distribution given to us by the spirit world, then we can calculate the probability that a t-statistic is different from zero. That calculation provides us with the p-value.
+
+Whew, so let's recap. When we're estimating linear models, we are estimating the value of the Gaussian distribution's two parameters: mean and standard deviation. We need a way to tell whether the estimated sample mean is statistically different from zero. Our best strategy (amazingly) is to use yet another distribution, the t-distribution. This distribution has a single parameter for the sample size, and quantifies the probability of observing that sample mean given the "noise" (i.e., variability in the form of the sample standard deviation) and sample size. If we can reject that null hypothesis, then we can conclude that the sample mean is significantly different from zero.
+
+Let's try to recap again, because this is hard stuff.
+
+The Gaussian distribution has some parameters. Using a sample, we estimate some statistics that approximate the true value of those parameters. However, the statistics by themselves don't tell us whether the estimate of the mean is "significantly" different from zero. Because the mean estimates vary a lot when sample sizes are low, we compute another statistic (the t-statistic) that takes sample size into account. That t-statistic belongs to the t-distribution, which can tell us whether a given t-statistic is significantly different from zero. If so, then we reject the null hypothesis and conclude that the sample mean is significantly different from zero.
+
+## Adding predictors
+
+So in the case of the simplest intercept-only model, we know that we're approximating the mean and standard deviation parameters, which characterize the Gaussian distribution. Our hope is that our data are well-described the Gaussian distribution.
+
+What happens when we start adding predictors? For example, we think that there's on average a difference in body mass between male and female penguins. Or, we think that there are, on average, differences in body mass between different penguin species.
+
+Well, this is basically as simple as saying that there are many Gaussian distributions to be described in our data, and that we need to estimate parameters for each one. It may help to stare at this histogram (which we've previously seen), and then to stare at the corresponding regression table (which we've also previously seen). Which rows of the regression table correspond with which histograms in the plot? What happens in the plot when a given mean (`estimate`) increases or decreases? What happens in the plot when a given standard deviation (via `std.err`) increases or decreases?
+
+```{r echo=FALSE}
+penguins %>%
+  drop_na() %>%
+  ggplot(aes(x=body_mass_g, color=sex, fill=sex)) +
+  facet_wrap(~species, ncol = 1) +
+  geom_histogram(position = "identity",
+                 alpha = 0.2)
+```
+
+```{r echo=FALSE}
+penguins %>%
+  lm(body_mass_g ~ sex * species,
+     data = .) %>%
+  tidy() %>%
+  kable()
+```
