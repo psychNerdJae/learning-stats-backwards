@@ -2,7 +2,7 @@
 
 ## Introduction and setup
 
-Details TBA
+For details on how to install software and download the tutorials, [click here](https://jaeyoungson.com/tutorials.html). You'll be following the instructions for the sister tutorial series `into-the-tidyverse`, but most of the instructions apply just as well for `learning-stats-backwards`.
 
 
 ## File and folder structure
@@ -48,11 +48,14 @@ Details TBA
 5. Multiple regression III: interactions
 	- Hypothesis test: change depends on change...?
 	- Mixing continuous and categorical predictors.
-6. Generalized linear models.
-	- What does it mean to hold an expectation?
-	- An introduction to distributional thinking.
+6. Parametric models.
+	- What is an expectation?
+	- Distributional thinking.
+	- (Re)introducing the Gaussian distribution.
+7. Generalized linear models.
+	- Non-Gaussian distributions.
 	- Logistic and Poisson regression.
-7. Multilevel modeling.
+8. Multilevel modeling.
 	- The problem of repeated measures.
 	- The logic of mixed-effects regression.
 	- Introduction to `lme4`.
