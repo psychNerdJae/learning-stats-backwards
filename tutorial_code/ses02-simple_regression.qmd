@@ -1,0 +1,354 @@
+---
+title: "Learning stats backwards, Session 2"
+subtitle: "Simple regression"
+author: "Jae-Young Son"
+date: "2021-05-05"
+date-modified: "2022-12-02"
+theme:
+  light: flatly
+  dark: darkly
+format:
+  html:
+    toc: true
+    toc-location: left
+    code-fold: show
+    code-line-numbers: true
+    embed-resources: true
+---
+
+# Setup
+
+We'll first want to import some libraries that expand the functionality of R.
+
+One of the fun datasets we'll use is a delightful study of penguins, observed by Dr. Kristen Gorman at Palmer Station in Antarctica. If you don't have it installed yet, you can download it using the following command.
+
+```{r install-penguins}
+#| eval: false
+
+install.packages("palmerpenguins")
+```
+
+```{r load-libraries}
+#| message: false
+
+library(tidyverse)
+library(broom)
+library(knitr)
+library(here)
+library(palmerpenguins)
+```
+
+# What does it mean to test a hypothesis?
+
+I live in Providence, RI, where it is all-too-common that we look out the window, only to see that the sky is turning from blue to gray. From this, we might make a **prediction** that it might start raining. Why do we think this? Well, it's because we've had a lot of past experiences that tell us that gray skies are a reliable **predictor** of weather **outcomes**. In other words, we can form an **expectation** about the amount of rainfall, **conditional** on the skies being blue or gray. Of course, there's a lot of **variability** in the weather, and the sky color sometimes contradicts our predictions. In fact, due to this variability, we might even *falsely* believe that there's a relationship between sky color and rainfall.
+
+In this simple example, we have all of the essential elements of a hypothesis test. We want to make a prediction about some outcome variable. We believe that as a predictor variable changes, so does the outcome. But, it's possible that our beliefs are wrong, and there's no real relationship between the predictor and outcome variables. Our job is to figure out what relations are real. To do this, we need to use the tools of hypothesis testing.
+
+## Nihilism and the null hypothesis
+
+We start with nihilism, a philosophy where we are skeptical that anything is real. Are there any real relationships between variables in the world? Like the nihilist, we begin by declaring, "No."
+
+Is there any relationship between gray sky and rainfall? No, says the nihilist.
+
+And the nihilist is right to be skeptical. Sometimes, the sky is gray, and yet there is no rain. Sometimes, the sky is blue, and yet it rains. At best, sky color is a noisy, imprecise, and imperfect predictor of rain. We must always acknowledge the possibility that we fooled ourselves into believing that there's a relationship because humans crave to impose meaning onto the vast senselessness of the cold, uncaring universe. This is what statisticians call the **null hypothesis**, because it is a hypothesis that there is no effect, no difference, no relationship. It is denoted using $H_0$, where $H$ stands for "hypothesis" and $0$ stands for "null."
+
+What can we do to fight against the despair that Kierkegaard called "the sickness unto death"? Every day, we can make a note of what color the sky was, and then measure how many inches of rain fell that day. If the nihilists are right, the amount of rainfall does not depend on whether the sky is blue or gray. What does that look like in math?
+
+$H_0: p(\text{rain} | \text{gray skies}) - p(\text{rain} | \text{blue skies}) = 0$
+
+::: callout-tip
+If you need a refresher on the notation, we're indicating the probability $p$ of it raining, given that the skies are gray, or given that the skies are blue. If there's no difference in the probability of it raining, given the color of the sky, then subtracting those probabilities leads to a difference of zero.
+:::
+
+So we diligently measure sky color and rainfall. We find that on days where the sky is gray, there tends (on **average**) to be $0.1$ more inches of rain than on days where the sky is blue. Of course, $0.1$ is not $0$. Can we reject the nihilistic belief that there's no relationship between these variables?
+
+The nihilist scoffs at your naive enthusiasm. "Sure, you've shown that there is *literally* a non-zero effect. That's not so hard to do. Would you be so excited if you'd found that there's $0.01$ more inches of rain when the sky is gray? Or $0.001$ more inches of rain? That all looks like randomness. It's all the same to me: nothing."
+
+We have learned our first lesson. It's not sufficient to know what the relationship **strength** is between two variables. We also need to know how *likely* it would be that we'd observe that relationship strength in our data, if the null hypothesis were true. Statisticians refer to this probability as **statistical significance**.
+
+## What hypothesis testing is not
+
+Note that a hypothesis test is ***not*** the same as a theory. We might have a hypothesis that gray skies predict rain, but we have no theory telling us why that might be true. Sometimes, different theories make different hypotheses about what predictors are associated with a particular outcome. This is good, because this allows you to use hypothesis testing to settle between competing theories. But, most of the time, different theories make the same predictions. This is bad, because a hypothesis test doesn't provide any diagnostic information to help you pick a better theory. And, a surprisingly large amount of the time (particularly in psychology and cognitive science), you can use the same theory to predict *completely different* outcomes. Is this bad? Well, it certainly means that the theory needs refinement, because it makes predictions that are so broad that any outcome is considered plausible.
+
+Note that a hypothesis test is ***not*** the same as a causal claim. We could have a hypothesis that gray skies cause rain, but how could we tell this from an alternative hypothesis that rain causes gray skies? Establishing causality is a hard, hard problem. This is why we need strong theories that make strong causal claims. The stronger the claim, the stronger the prediction. And the stronger the prediction, the more hypothesis testing can tell us whether the theory makes correct claims about causality. This is why I refer to "outcomes." Most people are interested in the outcome of rain; most people are not interested in the outcome of gray skies. What's the causal link between them? For the purpose of hypothesis testing, we'll focus only on being able to predict an outcome of interest. We can make no claims about their causal relation.
+
+# Change depends on quantities
+
+Some of our predictors are **quantities**. In our penguins dataset, we might be interested in predicting a penguin's body mass (in grams) from their flipper length (in millimeters). Intuitively, we might expect that for every millimeter increase in flipper length, that we'd get some corresponding increase in body mass. Remember the two questions we're interested in answering: the **strength** of this relation, and the **likelihood** of observing this relationship strength if we believe that there's no true relation.
+
+These are abstract ideas, so it helps to be able to look at the data.
+
+```{r plot-continuous}
+penguins %>%
+  ggplot(aes(x=flipper_length_mm, y=body_mass_g)) +
+  geom_point()
+```
+
+That looks like a very strong relationship indeed. On average, it seems that as flipper length increases, so does body mass. Let's perform the corresponding hypothesis test.
+
+A couple of technical notes before we run the analysis.
+
+We're going to use the function `lm`, which stands for "linear model". What does that mean? It means that we have a model of the world in which every millimeter increase in flipper length predicts some *constant* corresponding increase in body mass. Contrast that against, say, a nonlinear model where body mass is greater for medium-sized flippers, and less for both small and large flippers. If it helps you to think about it graphically, a linear model is one where you can characterize the relationship between two variables using a straight line (no curves!). If it helps you to think about it mathematically, a linear model is one that takes this basic form:
+
+$\text{Outcome Variable} = \beta_0 + \beta_1 \text{(Predictor Variable 1)}$
+
+::: callout-tip
+The symbol $\beta$ is the Greek symbol "beta", or the letter $b$. By convention, each variable in a linear model is assigned a numeric subscript (e.g., $\beta_0$). This is an arbitrary choice in the sense that we could have written the equivalent equation $\text{Outcome Variable} = a + b \text{(Predictor Variable 1)}$.
+:::
+
+If you're thinking that this looks familiar to the kinds of linear equations you solved in algebra class (e.g., $ax + b = c$), you're absolutely right. That's exactly it.
+
+Unfortunately, `lm` doesn't play nice with the tidyverse. If you've gone through my `into-the-tidyverse` tutorials, you know that I love a good pipe (some would say to excess). But, not all functions are designed to work with them. You might recall the relatively obscure tidbit that tidyverse functions play nice with each other because their first argument is always the data being passed from one function to another.
+
+In the case of `lm`, the first argument is a formula, not a dataframe. So, in order to pipe data to this function, we need to tell `%>%` that the data needs to be directed to a different argument. We do that using the "lazy dot" operator `.` (see below for example).
+
+Speaking of which, what is going on in the first argument of `lm`? This is known as **Wilkinson notation**, which is commonly used in many statistics software. This is saying that we want to predict the outcome variable `body_mass_g` using the predictor variable `flipper_length_mm`. The tilde operator `~` is used in place of `=`, as the equal sign operator already has a reserved meaning in code.
+
+Okay, let's actually run the analysis!
+
+```{r lm-continuous}
+penguins %>%
+  lm(
+    body_mass_g ~ flipper_length_mm,
+    data = .
+  ) %>%
+  tidy() %>%
+  kable()
+```
+
+Let's start with `flipper_length_mm`. We see that the `estimate` is $49.69$, which means that every millimeter increase in a penguin's flipper length is associated with a $49.69$-gram increase in their body mass, on average. Is that significantly different from $0$? This is what the `p-value` tells us: the probability of observing an average relation strength of $49.69$, if we start from the nihilist belief that there is actually no relationship between flipper length and body mass. We see that this probability is almost $0$. We reject the null hypothesis and triumph over nihilism.
+
+How about the term `(Intercept)`? This term refers to a penguin's average body mass when it has a flipper length of 0. The model predicts that such a penguin has a body mass of $-5,780$ grams. This is a highly significant effect, with a p-value close to $0$. But obviously, we need to pause and think about this. As far as we're aware, penguins can't have negative mass, and even baby penguins have flippers longer than $0$ millimeters. Our model makes this prediction because we are **extrapolating** beyond the reasonable limits of our predictor variable. Let this be a warning: everything in a statistical model must be interpreted in the context of your data. If you start making predictions that go beyond the limits of what your data can tell you, you can get yourself into trouble.
+
+In our graph, we see that the smallest flipper is about $170$ millimeters. How can we make a prediction about the average body mass of a penguin with a flipper that short? In order to do this, we need to express our model in mathematical terms:
+
+$\text{Body Mass} = \beta_0 + \beta_1 \text{(Flipper Length)}$
+
+Here, $\beta_0$ refers to the intercept estimate, $-5,780$. That's what we start out with when flipper length is $0$. To that, we add the flipper length $170$ multiplied by $\beta_1 = 49.69$, which is our estimate of the average relationship strength between flipper length and body mass. Put together, we get a penguin with a body mass of $-5,780 + (50 \times 170) = 2,719$ grams (rounded).
+
+## Exercise 1
+
+Your ecologist friend has the hypothesis that penguins with longer bills have greater body mass, as they have an easier time hunting prey. Plot this relationship. Test this hypothesis. Interpret the estimates and p-values in plain language, so that your ecologist friend can understand what you found. Your ecologist friend follows up by mentioning that they're working with a penguin with a bill that is 40mm long. Unfortunately, their scale is broken, and they don't know how heavy it is. Make a prediction for this penguin.
+
+# Change depends on categories
+
+Sometimes, the predictors we work with are not quantities, but categories. For example, there are three species of penguin in our dataset: Adelie, Chinstrap, and Gentoo penguins. For our purposes, we're interested in whether Adelie and Gentoo penguins have different body masses on average. The nihilist says that there's no difference; there's no relationship between species and body mass. How do we test this?
+
+First, let's plot the data. Remember that the y-axis is plotting *average* body mass.
+
+```{r plot-categories}
+penguins %>%
+  filter(species %in% c("Adelie", "Gentoo")) %>%
+  group_by(species) %>%
+  summarise(
+    body_mass_g = mean(body_mass_g, na.rm=TRUE),
+    .groups = "drop"
+  ) %>%
+  ggplot(aes(x=species, y=body_mass_g)) +
+  geom_col()
+```
+
+Now, we face a conundrum. How do we use a linear model to test this hypothesis? What does math know of categories? It doesn't make sense, for example, to say that there is a penguin that has $\text{species} = 0.5$. We will dig into the details of this problem in a second. For now, we are satisfied that there is a solution. The model specification looks very similar from before:
+
+```{r lm-categorical}
+penguins %>%
+  filter(species %in% c("Adelie", "Gentoo")) %>%
+  lm(
+    body_mass_g ~ species,
+    data = .
+  ) %>%
+  tidy() %>%
+  kable()
+```
+
+You'll note that there is a term for `speciesGentoo`. What happened to our beloved Adelie penguins? They have become the intercept for this model. Don't believe me? Look at the intercept estimate, then compare that with the graph we made. So in regressions containing categorical predictors, the intercept term $\beta_0$ tells you the average value of the **reference category**.
+
+The term `speciesGentoo` tells you the average body mass difference between Adelie and Gentoo penguins. What does the estimate $1,375$ mean? If you need a hint, look at the graph we made earlier. Is this difference significant?
+
+Now, we return to the problem of converting categorical predictors into numbers. If we have $k$ categories, we can encode them into $k-1$ **dummy variables**. For example, let's think about four (quasi-)racial groups that are commonly used to describe people in the U.S.: Asian, Black, Latinx, and White. We could create a variable that encodes Black identity, another that encodes Latinx identity, and another that encodes white identity (see table). You'll notice that across all three dummy variables, Asian always has the value $0$.
+
+| Category | Dummy Variable 1 | Dummy Variable 2 | Dummy Variable 3 |
+|----------|------------------|------------------|------------------|
+| Asian    | 0                | 0                | 0                |
+| Black    | 1                | 0                | 0                |
+| Latinx   | 0                | 1                | 0                |
+| White    | 0                | 0                | 1                |
+
+When we were learning about continuous predictors, we introduced the general formula:
+
+$\text{Outcome Variable} = \beta_0 + \beta_1 \text{(Predictor Variable)}$
+
+Remember how we defined the intercept when we only had a single continuous predictor? Now, I'll just tell you that if we wanted to predict (for example) health outcomes using racial groups, and we used the dummy coding scheme above, Asian would be the reference category. Why?
+
+Thankfully, if you provide R with something that "looks like" a categorical variable (e.g., strings, factors), it will automatically create the dummy variables for you. We've already seen that in the `lm` function output.
+
+## Exercise 2
+
+With this in mind, let's try testing two hypotheses using the same regression: that on average, both Chinstrap and Gentoo penguins have a different body mass than Adelie penguins. Plot the data. Run this analysis. Interpret the results, and make sure you explain the meaning of the model estimates and p-values.
+
+Now, let's try changing the reference category. By default, R uses alphabetical order to determine the reference category. We could change this using the `tidyverse` function `fct_relevel` inside a `mutate` call. First, change the reference category to Chinstrap penguins and re-run the analysis. What do you notice about the estimates and p-values, compared to the model where Adelie penguins were the reference category? Finally, change the reference category to Gentoo penguins and re-run the analysis. Compare the estimates and p-values against the other two models. What do you notice?
+
+As you can see, changing the reference category is a simple but powerful trick for understanding what groups are different from other groups. This is known as **reparameterizing** the model. This is because all three of the models are completely equivalent to each other, but tell you something a little different because of how you parameterized the dummy variables.
+
+There are similarly delightful tricks to working with categorical variables, which we'll cover in a future tutorial.
+
+# What about these other tests I've learned about?
+
+If you've taken an introductory statistics class before, some of these ideas might seem familiar to you. In particular, you might remember having learned about correlations and t-tests. For some reason, many introductory statistics classes seem hell-bent on teaching you different "types" of tests, and forcing you to memorize which test is appropriate for what analysis. Under this view, you'd be forgiven if 1) you kept mixing up when to use correlations versus t-tests, and 2) you didn't realize that there's a relationship between them.
+
+We've already seen how the same basic formula (below) can be used to analyze both continuous and categorical predictors. We've already given this formula a name: a **linear model**. What if I told you that correlations and t-tests are both special cases of the same linear model? You might not believe me, and that's okay. "Trust but verify" is the motto of the scientist. Let's demonstrate that this is true.
+
+## Correlation
+
+First, we return to the relationship between flipper length and body mass. Here's the correlation:
+
+```{r corr-test}
+with(
+  penguins,
+  cor.test(flipper_length_mm, body_mass_g)
+) %>%
+  tidy() %>%
+  kable()
+```
+
+You might recall that correlations have no units. This is because they standardize the variables so that they have the same standard deviations. A correlation can be converted into a regression slope by "un-standardizing" the variables, using the equation $\text{Regression Slope} = \text{Correlation Coefficient} \times (SD_y / SD_x)$.
+
+```{r corr-unstandardize}
+0.8712018 * with(
+  penguins,
+  sd(body_mass_g, na.rm = TRUE) / sd(flipper_length_mm, na.rm = TRUE)
+)
+```
+
+Now let's compare that number against our regression... Not only is the estimate the same, but you'll note that the p-value is (as far as we can tell) identical.
+
+```{r}
+penguins %>%
+  lm(
+    body_mass_g ~ flipper_length_mm,
+    data = .
+  ) %>%
+  tidy() %>%
+  kable()
+```
+
+## t-test
+
+Now we turn our attention to the t-test. For simplicity, we'll stick with the comparison between Adelie and Gentoo penguins' body masses.
+
+```{r}
+with(
+  penguins %>% filter(species %in% c("Adelie", "Gentoo")),
+  t.test(body_mass_g ~ species, var.equal = TRUE)
+) %>%
+  tidy() %>%
+  kable()
+```
+
+Now compare that against regression... Besides the sign flip, the estimates and p-values are identical.
+
+```{r}
+penguins %>%
+  filter(species %in% c("Adelie", "Gentoo")) %>%
+  lm(
+    body_mass_g ~ species,
+    data = .
+  ) %>%
+  tidy() %>%
+  kable()
+```
+
+So, there we have it: correlations and t-tests are special cases of the same linear model. This makes regression a very flexible and powerful tool for hypothesis testing. Starting with the next tutorial, we'll see how regression supersedes simpler tests like correlations and t-tests.
+
+## Exercise 3
+
+In the `data` folder, you'll find a [dataset](https://www.sciencedirect.com/science/article/abs/pii/S0191886920306115) from my friends and collaborators: Joey Heffner, Marc-Lluis Vives, and Oriel FeldmanHall. In it, they studied people's willingness to self-isolate during covid-19 (these data were collected in the early days of the pandemic). People read a message that was either threatening (e.g., you'd better watch out, because covid is coming to get you), or prosocial (e.g., you can help others by staying home). Based on this intervention, the researchers wanted to know whether the prosocial message was more effective at getting people to self-isolate. Use this data (code below) to practice your new skills.
+
+There are a couple of variables that you could play around with in your explorations:
+
+-   intervention: tells you whether a subject got the threatening or prosocial intervention
+-   willingness: tells you how willing a subject is to self-isolate after reading the message (0=not willing, 100=extremely willing)
+-   change: tells you the change in a subject's willingness to self-isolate (0=no change, 100=complete change)
+-   valence: how positive or negative a subject's emotions were after reading the message (higher numbers = more positive)
+-   arousal: how "activated" a subject's emotions were after reading the message (higher numbers = more activated)
+
+Do the following:
+
+1.  Form two research question with testable hypotheses, one using a continuous predictor and the other using a categorical predictor.
+2.  Plot the data in a way that lets you visualize your upcoming analyses.
+3.  Using linear regression, analyze the data to test your hypothesis.
+4.  Interpret the results. Make sure to explain in plain language, so that your English major friend could understand what you found. Interpretation should include both the beta estimate(s) and p-values.
+5.  If you're still feeling skeptical, use correlation and/or t-tests to see whether your results match.
+
+When loading the data, note that we're throwing out some observations. This is because we want to simplify the structure of the dataset for the sake of practice.
+
+```{r load-data}
+#| eval: false
+
+covid_intervention <- here("data", "covid_intervention.csv") %>%
+  read_csv() %>%
+  mutate(keep = if_else(sub %% 2 == 0, "threat", "prosocial")) %>%
+  filter(keep == intervention) %>%
+  select(sub, intervention, willingness, change, valence, arousal)
+```
+
+```{r exercise-3-solution}
+#| eval: false
+#| echo: false
+
+# Categorical example
+covid_intervention %>%
+  ggplot(aes(x=intervention, y=willingness)) +
+  geom_point() +
+  stat_summary(
+    geom = "crossbar",
+    fun = mean,
+    color = "red"
+  )
+
+covid_intervention %>%
+  lm(
+    willingness ~ intervention,
+    data = .
+  ) %>%
+  tidy() %>%
+  kable()
+
+with(
+  covid_intervention,
+  t.test(willingness ~ intervention, var.equal = TRUE)
+) %>%
+  tidy() %>%
+  kable()
+
+# Continuous example
+covid_intervention %>%
+  ggplot(aes(x=valence, y=willingness)) +
+  geom_point() +
+  geom_smooth(method = "lm")
+
+covid_intervention %>%
+  lm(
+    willingness ~ valence,
+    data = .
+  ) %>%
+  tidy() %>%
+  kable()
+
+with(
+  covid_intervention,
+  cor.test(willingness, valence)
+) %>%
+  tidy() %>%
+  kable()
+
+with(
+  covid_intervention,
+  cor.test(willingness, valence)
+) %>%
+  tidy() %>%
+  pull(estimate) * with(
+    covid_intervention,
+    sd(willingness, na.rm = TRUE) / sd(valence, na.rm = TRUE)
+  )
+```
