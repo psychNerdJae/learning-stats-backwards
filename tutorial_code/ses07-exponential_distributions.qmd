@@ -1,0 +1,213 @@
+---
+title: "Learning stats backwards, Session 7"
+subtitle: "Generalized linear models"
+author: "Jae-Young Son"
+date: "2022-12-03"
+theme:
+  light: flatly
+  dark: darkly
+format:
+  html:
+    toc: true
+    toc-location: left
+    code-fold: show
+    code-line-numbers: true
+    embed-resources: true
+---
+
+# Setup
+
+Let's load the usual libraries...
+
+```{r load-libraries}
+#| message: false
+
+library(tidyverse)
+library(broom)
+library(knitr)
+library(here)
+library(janitor)
+```
+
+# Non-Gaussian distributions
+
+## The verbal description
+
+Last time, we examined one of the most widely-used distributions in statistics, the Gaussian (normal) distribution. This distribution is characterized by the parameters $\mu$ (mu; mean) and $\sigma$ (sigma; standard deviation), which together create a "bell-shaped curve" symmetric around the mean. Since the Gaussian is a fully continuous distribution, outcomes can (more or less) take on any real value: you can have a weight of 65.95kg and a height of 170.18cm.
+
+The relative simplicity of using the Gaussian distribution often leads to its overuse (misuse? abuse?) in situations where the underlying distribution is not well-described by the standard deviation parameter.
+
+Consider our gambling example from the previous tutorial. When you sit down at a slot machine, you have some fixed probability of winning versus losing in the long run. However, on any given gamble, you do not win "20%" of a gamble; you either win or lose. This is known as **binary** data, where the outcome can only ever be one of two values. Though of course you *could* compute the standard deviation of binary data, that parameter would fail to define a meaningful Gaussian distribution for describing the data.
+
+Consider also data where the outcomes are **counts** of things. How many cars drive along a particular road each hour? Your expectation might be something like 45.8 cars/hour after averaging, but you'll never see someone driving 4/5th of a car. Again, there's nothing stopping you from computing the standard deviation of this distribution (it's just a mathematical definition), but if you use that standard deviation to generate a Gaussian distribution to model your count data, it is most likely meaningless.
+
+## The visual description
+
+Let's load in a dataset where the goal is to predict whether an individual has an income above $50,000 (50k), based on various demographic factors. For the sake of visualization, let's say we're interested in knowing the gender wage gap, in which women are systematically underpaid relative to men.
+
+```{r load-income}
+income <- here("data", "census_income.csv") %>%
+  read_csv() %>%
+  mutate(
+    income_above_50k = case_when(
+      income == "<=50K" ~ 0L,
+      income == ">50K" ~ 1L,
+      TRUE ~ NA_integer_
+    )
+  )
+```
+
+Using these data, we'll make a simple plot.
+
+```{r plot-income-sex-1}
+ income %>%
+  ggplot(aes(x=sex, y=income_above_50k)) +
+  geom_point()
+```
+
+What happened here? Well, there are only two outcomes of interest: yes an individual makes more than 50k, or no they don't. Since all of those datapoints are stacked on top of each other, it's basically impossible to tell how the data are distributed. Unlike some of the other data we've been examining so far, like penguin biometrics, there are no intermediary values. This is why the Gaussian distribution fails to adequately describe binary-outcome data.
+
+You might have noticed that we've chosen `0=no` and `1=yes` to translate binary outcomes into numbers. Why have we done this? In principle, we could have chosen any two numbers we liked: `1/2` `-1/+1`, etc.
+
+The nice thing about using the `0/1` system is that we're interested in knowing the **probability** of an outcome, and probabilities are bounded in the range $[0, 1]$. By averaging an outcome variable that takes on the value $0$ or $1$, we automatically get probabilities for free! Let's visualize this to cement our intuition.
+
+```{r plot-income-sex-2}
+ income %>%
+  ggplot(aes(x=sex, y=income_above_50k)) +
+  # Add some jitter to see distribution more clearly
+  geom_jitter(
+    height = 0,
+    width = 0.25,
+    alpha = 0.01
+  ) +
+  stat_summary(
+    geom = "crossbar",
+    fun = mean,
+    color = "red"
+  )
+```
+
+Visualizing binary distributions can be harder when your predictor is (more) continuous. Here's an example with age:
+
+```{r plot-income-age-1}
+ income %>%
+  ggplot(aes(x=age, y=income_above_50k)) +
+  geom_point() +
+  stat_summary(
+    geom = "crossbar",
+    fun = mean,
+    color = "red"
+  )
+```
+
+You can see that a different mean has been plotted for each unique age in the dataset, as if age were a categorical variable. This isn't the worst visualization, in the sense that we can imagine drawing a smooth curve through these averages, but it does leave a lot to be desired.
+
+For one, if we had fully continuous ages (24.6 years old) instead of discrete ages (if you're between 24 and 25, then you're labeled as being 24, even if you're closer to being 25), then it'd get progressively more ridiculous to plot an average for each unique value of our predictor. In the worst-case scenario, every person has a completely unique age, and we'd draw a line for each observation, defeating the purpose of plotting averages to begin with.
+
+A related problem, which we can see in our plot, is that if there happen to be a small number of datapoints for a given value, then the average can reflect just a few weird individuals, and might not be representative of the broader patterns. In our plot, you can see this for some of the older individuals.
+
+As the following plot makes clear, linear regression utterly fails here, even when you allow your model to have curvature.
+
+```{r plot-income-age-2}
+ income %>%
+  ggplot(aes(x=age, y=income_above_50k)) +
+  geom_point() +
+  geom_smooth(
+    method = "lm", se = FALSE,
+    formula = y ~ poly(x, 2)
+  )
+```
+
+## Generalized linear models
+
+We began this series appreciating how many different "types" of statistical tests are actually linear models in disguise. For example, t-tests, ANOVAs, and correlations are all linear models, and all of them can be implemented under the common statistical framework of linear regression. The benefit of taking this conceptual approach is that a linear model is very easy to understand: we're estimating weights for each predictor, then adding all of the weighted predictors together to predict an outcome.
+
+But now it seems like we are stuck. We cannot use linear regression when the outcome variable is so poorly explained by Gaussian distribution, but we'd still like to take advantage of linear models' conceptual simplicity.
+
+The way we get un-stuck is by using **generalized linear models**, or GLMs. Conceptually, the big-picture idea is that we will continue to specify linear models: we will estimate weights for our predictors, then sum all of the weighted predictors together. In this sense, *GLMs are linear in the predictors.* The trick is then to pass the weighted sum through some sort of nonlinear transformation function. As usual, the weights in the linear model can take on any real numerical value, and are distributed according to a Gaussian distribution. However, the overall prediction is bounded within a range appropriate for the outcome variable being modeled, depending on the choice of the nonlinear transformation function.
+
+Feeling lost? That's okay. Let's learn GLMs backwards.
+
+# Logistic regression
+
+## Categorical predictors
+
+Does a person's sex predict whether their income is over 50k? We'd previously done a visual analysis and determined that men are more likely than women to make 50k. We can print that out as a table too:
+
+```{r income-by-sex-modelfree}
+income %>%
+  group_by(sex) %>%
+  summarise(p_income_above_50k = mean(income_above_50k)) %>%
+  kable()
+```
+
+Now, let's do a formal statistical analysis.
+
+```{r glm-income-sex}
+income %>%
+  glm(
+    income_above_50k ~ sex,
+    family = binomial,
+    data = .
+  ) %>%
+  tidy() %>%
+  kable()
+```
+
+You'll note that the specification is very similar to the linear models we've previously used. Instead of using `lm` for linear models, we're using `glm` for generalized linear models. We're also specifying an argument for a statistical family, and have used the **binomial** family in this example. We'll dive into what this means later.
+
+How can we interpret these beta estimates? These are in units of **log odds**. Generally speaking, it is very hard for people to understand log odds, and we will need to do some manual transformation to convert these back into intuitive units of probability. However, there is one narrow sense in which log odds *do* provide us with an intuitive readout, though annoyingly, the interpretation is ever-so-slightly different for the intercept term versus other terms.
+
+If the intercept is exactly $0$, then the probability of an outcome occurring is exactly 50%, adjusting for all other predictors. Negative intercept estimates indicate probabilities under 50%, and positive estimates indicate probabilities over 50%. Remember that "adjusting for all other predictors" mathematically means "when the value of all other predictors is exactly zero."
+
+So how do we convert those log odds into a probability? "Log" here refers to units in logarithmic units, which are very convenient for computers, and utterly incomprehensible for most humans. So as a first step, let's get out of logarithm space. You may remember from your grade-school algebra classes that the inverse of a logarithm is exponentiation.
+
+In our model, the intercept refers to women as the reference category, with an estimate of $-2.096263$. Let's exponentiate that.
+
+```{r log-odds-to-odds}
+exp(-2.096263)
+```
+
+This returns the odds, which is something that is intuitive for professional gamblers, and basically incomprehensible for most other humans. In the context of gambling, you might have heard phrases like "the odds of winning are 2-to-1". How, then, do we turn odds into probability? Written out mathematically, the probability associated with 2-to-1 odds is $p(\text{Winning}) = \frac{\text{Winning}}{\text{Winning or Losing}} = \frac{2}{2+1} = \frac{2}{3}$, or about 66%.
+
+Using the same logic, we can convert the intercept log odds into a probability:
+
+```{r log-odds-to-prob}
+exp(-2.096263) / (1 + exp(-2.096263))
+```
+
+Bingo. This matches the "model-free" average we computed earlier.
+
+Does this work for interpreting non-intercept 
+
+We can also see whether this works for the beta coefficient associated with men.
+
+```{r log-odds-to-prob}
+exp(1.276135)
+```
+
+
+
+If a non-intercept beta estimate is exactly $0$, then it tells us that one-unit changes in the predictor variable are associated with no increases or decreases in the probability of an outcome happening. If the beta estimate is negative, then one-unit changes in the predictor variable are associated with a decreased probability of the outcome happening; the more negative the estimate, the more strongly the probability decreases. The inverse is true of positive beta estimates.
+
+
+
+
+
+
+
+
+```{r}
+income %>%
+  glm(
+    income_above_50k ~ sex,
+    family = binomial,
+    data = .
+  ) %>%
+  tidy(exponentiate = T)
+```
+
+
+
+
+
